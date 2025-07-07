@@ -22,14 +22,8 @@
   <button onclick="sendData()">发送数据</button>
 
   <h3>📈 数据显示与导出</h3>
-  <div>
-    <label for="addSnInput">添加新设备 SN:</label>
-    <input id="addSnInput" placeholder="输入新设备 SN" />
-    <button onclick="addSn()">添加 SN</button>
-  </div>
-  <br/>
   <label for="snSelect">选择设备 SN:</label>
-  <select id="snSelect" onchange="onSnChange()">
+  <select id="snSelect" onchange="fetchData()">
     <option value="">请选择设备 SN</option>
   </select>
 
@@ -58,42 +52,13 @@
       const res = await fetch('/api/all-sns');
       const sns = await res.json();
       const select = document.getElementById('snSelect');
-      // 清空之前选项，保留第一个“请选择设备 SN”
-      select.options.length = 1;
+      select.innerHTML = `<option value="">请选择设备 SN</option>`;
       sns.forEach(sn => {
         const option = document.createElement('option');
         option.value = sn;
         option.textContent = sn;
         select.appendChild(option);
       });
-    }
-
-    function addSn() {
-      const newSn = document.getElementById('addSnInput').value.trim();
-      if (!newSn) {
-        alert("请输入设备 SN");
-        return;
-      }
-      const select = document.getElementById('snSelect');
-      for (let i = 0; i < select.options.length; i++) {
-        if (select.options[i].value === newSn) {
-          alert("设备 SN 已存在");
-          select.value = newSn;
-          onSnChange();
-          return;
-        }
-      }
-      const option = document.createElement('option');
-      option.value = newSn;
-      option.textContent = newSn;
-      select.appendChild(option);
-      select.value = newSn;
-      onSnChange();
-      document.getElementById('addSnInput').value = '';
-    }
-
-    function onSnChange() {
-      fetchData();
     }
 
     async function fetchData() {
@@ -122,7 +87,7 @@
         const danger = threshold !== null && entry.distance < threshold;
         if (danger) thresholdAlert = true;
         html += `<tr>
-          <td>${entry.robot_SN}</td>
+          <td>${entry.sn}</td>
           <td style="background:${danger ? '#ffcccc' : 'transparent'}">${entry.distance}</td>
           <td>${entry.battery}</td>
           <td>${entry.temperature}</td>
@@ -164,13 +129,9 @@
       const text = await res.text();
       alert(text);
 
-      // 发送后如果选中了这个sn，则刷新数据
       const selectedSn = document.getElementById('snSelect').value;
       if (selectedSn === sn) {
         fetchData();
-      } else {
-        // 没选中该 SN，可选择自动添加到下拉
-        // addSn() 也可调用，这里默认不自动加
       }
     }
 
@@ -190,7 +151,7 @@
 
     window.onload = () => {
       loadSnList();
-      setInterval(fetchData, 30000); // 每30秒刷新
+      setInterval(fetchData, 10000);
     };
   </script>
 </body>

@@ -13,7 +13,7 @@ db.serialize(() => {
   db.run(`
     CREATE TABLE IF NOT EXISTS sensor_data (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      robot_SN TEXT NOT NULL,
+      sn TEXT NOT NULL,
       distance REAL NOT NULL,
       battery INTEGER NOT NULL,
       temperature REAL NOT NULL,

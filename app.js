@@ -1,4 +1,3 @@
-// app.js
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
@@ -12,10 +11,9 @@ const app = express();
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static('public')); // 放前端文件夹
+app.use(express.static('public'));
 
-// MQTT 设置
-const mqttClient = mqtt.connect('mqtt://localhost:1883'); // 改成你的 Broker 地址和端口
+const mqttClient = mqtt.connect('mqtt://localhost:1883');
 
 mqttClient.on('connect', () => {
   console.log("✅ 已连接到 MQTT Broker");
@@ -25,16 +23,37 @@ mqttClient.on('connect', () => {
   });
 });
 
+mqttClient.on('error', (err) => {
+  console.error("❌ MQTT 连接错误：", err.message);
+});
+
+mqttClient.on('reconnect', () => {
+  console.log("🔄 MQTT 正在尝试重连...");
+});
+
 mqttClient.on('message', (topic, message) => {
   try {
     const payload = JSON.parse(message.toString());
-    const { sn, data } = payload;
-    if (!sn || !Array.isArray(data) || data.length === 0) return;
+    const sn = payload.sn;
+    const sensor = payload.data?.[0];
 
-    const { distance, battery, temperature, position } = data[0];
+    if (!sn || !sensor) return;
+
+    const { distance, battery, temperature, position } = sensor;
+
+    // 加强数据校验
+    if (
+      typeof distance !== 'number' || distance < 0 ||
+      typeof battery !== 'number' || battery < 0 || battery > 100 ||
+      typeof temperature !== 'number' || temperature < -40 || temperature > 85 ||
+      typeof position !== 'string'
+    ) {
+      console.warn("⚠️ MQTT 数据不合法，已忽略");
+      return;
+    }
+
     const timestamp = new Date().toISOString();
-
-    const sql = `INSERT INTO sensor_data (robot_SN, distance, battery, temperature, position, timestamp)
+    const sql = `INSERT INTO sensor_data (sn, distance, battery, temperature, position, timestamp)
                  VALUES (?, ?, ?, ?, ?, ?)`;
 
     db.run(sql, [sn, distance, battery, temperature, position, timestamp], (err) => {
@@ -42,31 +61,32 @@ mqttClient.on('message', (topic, message) => {
       else console.log(`📥 MQTT 数据写入成功：${sn}, ${distance}cm`);
     });
   } catch (e) {
-    console.error("❌ MQTT 消息格式错误：", e.message);
+    console.error("❌ MQTT 消息解析错误：", e.message);
   }
 });
 
-// HTTP POST 上传数据（备用）
+// HTTP POST 上传（测试备用）
 app.post('/api/data', (req, res) => {
   const { sn, data } = req.body;
+  const sensor = data?.[0];
 
-  if (!sn || !Array.isArray(data) || data.length === 0) {
-    return res.status(400).send('请求体必须包含 sn (字符串) 和 data 数组');
+  if (!sn || !Array.isArray(data) || !sensor) {
+    return res.status(400).send('请求体必须包含 sn 和 data 数组');
   }
 
-  const { distance, battery, temperature, position } = data[0];
+  const { distance, battery, temperature, position } = sensor;
 
   if (
-    typeof distance !== 'number' ||
-    typeof battery !== 'number' ||
-    typeof temperature !== 'number' ||
+    typeof distance !== 'number' || distance < 0 ||
+    typeof battery !== 'number' || battery < 0 || battery > 100 ||
+    typeof temperature !== 'number' || temperature < -40 || temperature > 85 ||
     typeof position !== 'string'
   ) {
-    return res.status(400).send('data 中字段格式不正确');
+    return res.status(400).send('data 中字段格式不正确或值异常');
   }
 
   const timestamp = new Date().toISOString();
-  const sql = `INSERT INTO sensor_data (robot_SN, distance, battery, temperature, position, timestamp)
+  const sql = `INSERT INTO sensor_data (sn, distance, battery, temperature, position, timestamp)
                VALUES (?, ?, ?, ?, ?, ?)`;
 
   db.run(sql, [sn, distance, battery, temperature, position, timestamp], function (err) {
@@ -78,26 +98,29 @@ app.post('/api/data', (req, res) => {
   });
 });
 
-// 获取所有设备 SN
+// 获取所有 SN
 app.get('/api/all-sns', (req, res) => {
-  const sql = `SELECT DISTINCT robot_SN FROM sensor_data ORDER BY robot_SN`;
+  const sql = `SELECT DISTINCT sn FROM sensor_data ORDER BY sn`;
   db.all(sql, [], (err, rows) => {
     if (err) return res.status(500).send("查询失败");
-    const sns = rows.map(r => r.robot_SN);
+    const sns = rows.map(r => r.sn);
     res.json(sns);
   });
 });
 
-// 获取指定设备最新5条数据（支持 sn 查询参数）
+// 获取最新数据（可选 sn）
 app.get('/api/latest', (req, res) => {
   const sn = req.query.sn;
   let sql = `SELECT * FROM sensor_data`;
-  let params = [];
+  const params = [];
+
   if (sn) {
-    sql += ` WHERE robot_SN = ?`;
+    sql += ` WHERE sn = ?`;
     params.push(sn);
   }
+
   sql += ` ORDER BY timestamp DESC LIMIT 5`;
+
   db.all(sql, params, (err, rows) => {
     if (err) return res.status(500).send("查询失败");
     res.json(rows);
@@ -106,7 +129,8 @@ app.get('/api/latest', (req, res) => {
 
 // 导出 CSV
 app.get('/api/export-csv', (req, res) => {
-  const filePath = path.join(__dirname, 'exported_data.csv');
+  const filename = `bin_sensor_${Date.now()}.csv`;
+  const filePath = path.join(__dirname, filename);
   const ws = fs.createWriteStream(filePath);
 
   db.all(`SELECT * FROM sensor_data ORDER BY timestamp DESC`, [], (err, rows) => {
@@ -114,14 +138,14 @@ app.get('/api/export-csv', (req, res) => {
 
     const csvStream = fastcsv.format({ headers: true });
     csvStream.pipe(ws).on('finish', () => {
-      res.download(filePath, 'bin_sensor_data.csv', () => {
+      res.download(filePath, filename, () => {
         fs.unlinkSync(filePath);
       });
     });
 
     rows.forEach(row => {
       csvStream.write({
-        SN: row.robot_SN,
+        SN: row.sn,
         Distance: row.distance,
         Battery: row.battery,
         Temperature: row.temperature,
