@@ -5,8 +5,8 @@
   <title>Bin Sensor Monitor</title>
   <style>
     body { font-family: Arial, sans-serif; padding: 20px; }
-    input, button { margin: 5px; padding: 8px; }
-    table { border-collapse: collapse; width: 100%; max-width: 800px; margin-top: 20px; }
+    input, select, button { margin: 5px; padding: 8px; }
+    table { border-collapse: collapse; width: 100%; max-width: 1000px; margin-top: 20px; }
     th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
     th { background-color: #f0f0f0; }
     #alertMsg { color: red; font-weight: bold; margin-top: 10px; }
@@ -16,9 +16,23 @@
   <h2>📤 发送数据</h2>
   <input id="snInput" placeholder="设备 SN" />
   <input id="distanceInput" placeholder="距离 (cm)" />
+  <input id="batteryInput" placeholder="电量 (%)" />
+  <input id="tempInput" placeholder="温度 (°C)" />
+  <input id="positionInput" placeholder="姿态（如 tilt）" />
   <button onclick="sendData()">发送数据</button>
 
   <h3>📈 数据显示与导出</h3>
+  <div>
+    <label for="addSnInput">添加新设备 SN:</label>
+    <input id="addSnInput" placeholder="输入新设备 SN" />
+    <button onclick="addSn()">添加 SN</button>
+  </div>
+  <br/>
+  <label for="snSelect">选择设备 SN:</label>
+  <select id="snSelect" onchange="onSnChange()">
+    <option value="">请选择设备 SN</option>
+  </select>
+
   <input id="thresholdInput" placeholder="阈值距离 (cm)" />
   <button onclick="setThreshold()">设置阈值</button>
   <button onclick="fetchData()">🔄 刷新数据</button>
@@ -29,7 +43,6 @@
 
   <script>
     let threshold = null;
-    let alerted = false;
 
     function formatSGT(datetimeStr) {
       const date = new Date(datetimeStr);
@@ -41,47 +54,133 @@
       }).format(date);
     }
 
-    async function sendData() {
-      const robot_SN = document.getElementById('snInput').value.trim();
-      const load_cell1 = parseFloat(document.getElementById('distanceInput').value);
-      if (!robot_SN || isNaN(load_cell1)) {
-        alert("请输入设备 SN 和有效的距离值！"); return;
-      }
-      const res = await fetch('/api/data', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ robot_SN, load_cell1 })
+    async function loadSnList() {
+      const res = await fetch('/api/all-sns');
+      const sns = await res.json();
+      const select = document.getElementById('snSelect');
+      // 清空之前选项，保留第一个“请选择设备 SN”
+      select.options.length = 1;
+      sns.forEach(sn => {
+        const option = document.createElement('option');
+        option.value = sn;
+        option.textContent = sn;
+        select.appendChild(option);
       });
-      const text = await res.text();
-      alert(text);
+    }
+
+    function addSn() {
+      const newSn = document.getElementById('addSnInput').value.trim();
+      if (!newSn) {
+        alert("请输入设备 SN");
+        return;
+      }
+      const select = document.getElementById('snSelect');
+      for (let i = 0; i < select.options.length; i++) {
+        if (select.options[i].value === newSn) {
+          alert("设备 SN 已存在");
+          select.value = newSn;
+          onSnChange();
+          return;
+        }
+      }
+      const option = document.createElement('option');
+      option.value = newSn;
+      option.textContent = newSn;
+      select.appendChild(option);
+      select.value = newSn;
+      onSnChange();
+      document.getElementById('addSnInput').value = '';
+    }
+
+    function onSnChange() {
       fetchData();
     }
 
     async function fetchData() {
-      const res = await fetch('/api/latest');
+      const selectedSn = document.getElementById('snSelect').value;
+      if (!selectedSn) {
+        document.getElementById('dataList').innerHTML = '<p>请先选择设备 SN</p>';
+        document.getElementById('alertMsg').textContent = '';
+        return;
+      }
+
+      const res = await fetch(`/api/latest?sn=${encodeURIComponent(selectedSn)}`);
       const data = await res.json();
-      let html = `<table><thead><tr><th>SN</th><th>距离 (cm)</th><th>时间</th></tr></thead><tbody>`;
+
+      if (!data.length) {
+        document.getElementById('dataList').innerHTML = '<p>无数据</p>';
+        document.getElementById('alertMsg').textContent = '';
+        return;
+      }
+
+      let html = `<table><thead><tr>
+        <th>SN</th><th>距离 (cm)</th><th>电量 (%)</th><th>温度 (°C)</th><th>姿态</th><th>时间</th>
+      </tr></thead><tbody>`;
+
       let thresholdAlert = false;
       data.forEach(entry => {
-        const danger = threshold !== null && entry.load_cell1 < threshold;
+        const danger = threshold !== null && entry.distance < threshold;
         if (danger) thresholdAlert = true;
         html += `<tr>
           <td>${entry.robot_SN}</td>
-          <td style="background:${danger ? '#ffcccc' : 'transparent'}">${entry.load_cell1}</td>
+          <td style="background:${danger ? '#ffcccc' : 'transparent'}">${entry.distance}</td>
+          <td>${entry.battery}</td>
+          <td>${entry.temperature}</td>
+          <td>${entry.position}</td>
           <td>${formatSGT(entry.timestamp)}</td>
         </tr>`;
       });
       html += '</tbody></table>';
+
       document.getElementById('dataList').innerHTML = html;
-      document.getElementById('alertMsg').textContent = thresholdAlert ? `⚠️ 有数据低于阈值 ${threshold} cm！` : '';
+      document.getElementById('alertMsg').textContent = thresholdAlert
+        ? `⚠️ 有距离低于阈值 ${threshold} cm！`
+        : '';
+    }
+
+    async function sendData() {
+      const sn = document.getElementById('snInput').value.trim();
+      const distance = parseFloat(document.getElementById('distanceInput').value);
+      const battery = parseInt(document.getElementById('batteryInput').value);
+      const temperature = parseFloat(document.getElementById('tempInput').value);
+      const position = document.getElementById('positionInput').value.trim();
+
+      if (!sn || isNaN(distance) || isNaN(battery) || isNaN(temperature) || !position) {
+        alert("请输入所有字段的有效值！");
+        return;
+      }
+
+      const payload = {
+        sn,
+        data: [{ distance, battery, temperature, position }]
+      };
+
+      const res = await fetch('/api/data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const text = await res.text();
+      alert(text);
+
+      // 发送后如果选中了这个sn，则刷新数据
+      const selectedSn = document.getElementById('snSelect').value;
+      if (selectedSn === sn) {
+        fetchData();
+      } else {
+        // 没选中该 SN，可选择自动添加到下拉
+        // addSn() 也可调用，这里默认不自动加
+      }
     }
 
     function setThreshold() {
       const val = parseFloat(document.getElementById('thresholdInput').value);
       if (isNaN(val) || val <= 0) {
-        alert("请输入有效阈值"); return;
+        alert("请输入有效的阈值距离");
+        return;
       }
       threshold = val;
-      alerted = false;
       fetchData();
     }
 
@@ -90,7 +189,7 @@
     }
 
     window.onload = () => {
-      fetchData();
+      loadSnList();
       setInterval(fetchData, 30000); // 每30秒刷新
     };
   </script>
