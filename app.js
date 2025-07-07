@@ -1,3 +1,5 @@
+require('dotenv').config();  // 只调用一次，放最顶部
+
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
@@ -9,11 +11,13 @@ const db = require('./db');
 
 const app = express();
 
+// 中间件
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-const mqttClient = mqtt.connect('mqtt://localhost:1883');
+// MQTT 连接及事件处理
+const mqttClient = mqtt.connect(process.env.MQTT_BROKER_URL);
 
 mqttClient.on('connect', () => {
   console.log("✅ 已连接到 MQTT Broker");
@@ -36,12 +40,9 @@ mqttClient.on('message', (topic, message) => {
     const payload = JSON.parse(message.toString());
     const sn = payload.sn;
     const sensor = payload.data?.[0];
-
     if (!sn || !sensor) return;
 
     const { distance, battery, temperature, position } = sensor;
-
-    // 加强数据校验
     if (
       typeof distance !== 'number' || distance < 0 ||
       typeof battery !== 'number' || battery < 0 || battery > 100 ||
@@ -65,17 +66,15 @@ mqttClient.on('message', (topic, message) => {
   }
 });
 
-// HTTP POST 上传（测试备用）
+// HTTP POST 上传（备用）
 app.post('/api/data', (req, res) => {
   const { sn, data } = req.body;
   const sensor = data?.[0];
-
   if (!sn || !Array.isArray(data) || !sensor) {
     return res.status(400).send('请求体必须包含 sn 和 data 数组');
   }
 
   const { distance, battery, temperature, position } = sensor;
-
   if (
     typeof distance !== 'number' || distance < 0 ||
     typeof battery !== 'number' || battery < 0 || battery > 100 ||
@@ -113,14 +112,11 @@ app.get('/api/latest', (req, res) => {
   const sn = req.query.sn;
   let sql = `SELECT * FROM sensor_data`;
   const params = [];
-
   if (sn) {
     sql += ` WHERE sn = ?`;
     params.push(sn);
   }
-
   sql += ` ORDER BY timestamp DESC LIMIT 5`;
-
   db.all(sql, params, (err, rows) => {
     if (err) return res.status(500).send("查询失败");
     res.json(rows);
