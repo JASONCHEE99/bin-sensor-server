@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <title>Bin Sensor Monitor</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    input, button { margin: 5px; padding: 8px; }
+    table { border-collapse: collapse; width: 100%; max-width: 800px; margin-top: 20px; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+    th { background-color: #f0f0f0; }
+    #alertMsg { color: red; font-weight: bold; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h2>📤 发送数据</h2>
+  <input id="snInput" placeholder="设备 SN" />
+  <input id="distanceInput" placeholder="距离 (cm)" />
+  <button onclick="sendData()">发送数据</button>
+
+  <h3>📈 数据显示与导出</h3>
+  <input id="thresholdInput" placeholder="阈值距离 (cm)" />
+  <button onclick="setThreshold()">设置阈值</button>
+  <button onclick="fetchData()">🔄 刷新数据</button>
+  <button onclick="exportCSV()">⬇️ 导出 CSV</button>
+  <div id="alertMsg"></div>
+
+  <div id="dataList"></div>
+
+  <script>
+    let threshold = null;
+    let alerted = false;
+
+    function formatSGT(datetimeStr) {
+      const date = new Date(datetimeStr);
+      return new Intl.DateTimeFormat('zh-SG', {
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+        hour12: false,
+        timeZone: 'Asia/Singapore'
+      }).format(date);
+    }
+
+    async function sendData() {
+      const robot_SN = document.getElementById('snInput').value.trim();
+      const load_cell1 = parseFloat(document.getElementById('distanceInput').value);
+      if (!robot_SN || isNaN(load_cell1)) {
+        alert("请输入设备 SN 和有效的距离值！"); return;
+      }
+      const res = await fetch('/api/data', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ robot_SN, load_cell1 })
+      });
+      const text = await res.text();
+      alert(text);
+      fetchData();
+    }
+
+    async function fetchData() {
+      const res = await fetch('/api/latest');
+      const data = await res.json();
+      let html = `<table><thead><tr><th>SN</th><th>距离 (cm)</th><th>时间</th></tr></thead><tbody>`;
+      let thresholdAlert = false;
+      data.forEach(entry => {
+        const danger = threshold !== null && entry.load_cell1 < threshold;
+        if (danger) thresholdAlert = true;
+        html += `<tr>
+          <td>${entry.robot_SN}</td>
+          <td style="background:${danger ? '#ffcccc' : 'transparent'}">${entry.load_cell1}</td>
+          <td>${formatSGT(entry.timestamp)}</td>
+        </tr>`;
+      });
+      html += '</tbody></table>';
+      document.getElementById('dataList').innerHTML = html;
+      document.getElementById('alertMsg').textContent = thresholdAlert ? `⚠️ 有数据低于阈值 ${threshold} cm！` : '';
+    }
+
+    function setThreshold() {
+      const val = parseFloat(document.getElementById('thresholdInput').value);
+      if (isNaN(val) || val <= 0) {
+        alert("请输入有效阈值"); return;
+      }
+      threshold = val;
+      alerted = false;
+      fetchData();
+    }
+
+    function exportCSV() {
+      window.location.href = "/api/export-csv";
+    }
+
+    window.onload = () => {
+      fetchData();
+      setInterval(fetchData, 30000); // 每30秒刷新
+    };
+  </script>
+</body>
+</html>
