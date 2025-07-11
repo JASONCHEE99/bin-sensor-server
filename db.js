@@ -20,10 +20,14 @@ db.serialize(() => {
       position TEXT NOT NULL,
       timestamp TEXT NOT NULL
     )
-  `, (err) => {
-    if (err) console.error("❌ 创建 sensor_data 表失败：", err.message);
-    else console.log("✅ sensor_data 表已就绪");
-  });
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS devices (
+      sn TEXT PRIMARY KEY,
+      added_at TEXT DEFAULT (datetime('now', 'localtime'))
+    )
+  `);
 });
 
 module.exports = db;

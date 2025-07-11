@@ -4,15 +4,19 @@
   <meta charset="UTF-8" />
   <title>Bin Sensor Monitor</title>
   <style>
-    body { font-family: Arial, sans-serif; padding: 20px; }
+    body { font-family: Arial, sans-serif; padding: 20px; max-width: 1200px; margin: auto; }
     input, select, button { margin: 5px; padding: 8px; }
-    table { border-collapse: collapse; width: 100%; max-width: 1000px; margin-top: 20px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
     th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
     th { background-color: #f0f0f0; }
     #alertMsg { color: red; font-weight: bold; margin-top: 10px; }
   </style>
 </head>
 <body>
+  <h2>➕ 添加新设备</h2>
+  <input id="newSnInput" placeholder="新设备 SN" />
+  <button onclick="addDevice()">添加设备</button>
+
   <h2>📤 发送数据</h2>
   <input id="snInput" placeholder="设备 SN" />
   <input id="distanceInput" placeholder="距离 (cm)" />
@@ -103,36 +107,55 @@
         : '';
     }
 
-    async function sendData() {
-      const sn = document.getElementById('snInput').value.trim();
-      const distance = parseFloat(document.getElementById('distanceInput').value);
-      const battery = parseInt(document.getElementById('batteryInput').value);
-      const temperature = parseFloat(document.getElementById('tempInput').value);
-      const position = document.getElementById('positionInput').value.trim();
+async function sendData() {
+  const sn = document.getElementById('snInput').value.trim();
+  const distance = parseFloat(document.getElementById('distanceInput').value);
+  const battery = parseInt(document.getElementById('batteryInput').value);
+  const temperature = parseFloat(document.getElementById('tempInput').value);
+  const position = document.getElementById('positionInput').value.trim();
 
-      if (!sn || isNaN(distance) || isNaN(battery) || isNaN(temperature) || !position) {
-        alert("请输入所有字段的有效值！");
+  if (!sn || isNaN(distance) || isNaN(battery) || isNaN(temperature) || !position) {
+    alert("请输入所有字段的有效值！");
+    return;
+  }
+
+  const payload = {
+    sn,
+    data: [{ distance, battery, temperature, position }]
+  };
+
+  const res = await fetch('/api/data', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  const text = await res.text();
+  alert(text);
+
+  const selectedSn = document.getElementById('snSelect').value;
+  if (selectedSn === sn) {
+    fetchData();
+  }
+}
+
+
+    async function addDevice() {
+      const newSn = document.getElementById('newSnInput').value.trim();
+      if (!newSn) {
+        alert("请输入有效的设备 SN");
         return;
       }
 
-      const payload = {
-        sn,
-        data: [{ distance, battery, temperature, position }]
-      };
-
-      const res = await fetch('/api/data', {
+      const res = await fetch('/api/add-sn', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({ sn: newSn })
       });
 
       const text = await res.text();
       alert(text);
-
-      const selectedSn = document.getElementById('snSelect').value;
-      if (selectedSn === sn) {
-        fetchData();
-      }
+      loadSnList();
     }
 
     function setThreshold() {

@@ -1,5 +1,4 @@
-require('dotenv').config();  // 只调用一次，放最顶部
-
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
@@ -10,13 +9,11 @@ const mqtt = require('mqtt');
 const db = require('./db');
 
 const app = express();
-
-// 中间件
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-// MQTT 连接及事件处理
+// MQTT 连接
 const mqttClient = mqtt.connect(process.env.MQTT_BROKER_URL);
 
 mqttClient.on('connect', () => {
@@ -27,20 +24,54 @@ mqttClient.on('connect', () => {
   });
 });
 
-mqttClient.on('error', (err) => {
-  console.error("❌ MQTT 连接错误：", err.message);
-});
-
-mqttClient.on('reconnect', () => {
-  console.log("🔄 MQTT 正在尝试重连...");
-});
-
 mqttClient.on('message', (topic, message) => {
   try {
     const payload = JSON.parse(message.toString());
     const sn = payload.sn;
     const sensor = payload.data?.[0];
     if (!sn || !sensor) return;
+
+    isRegisteredSN(sn, (err, valid) => {
+      if (err || !valid) return;
+
+      const { distance, battery, temperature, position } = sensor;
+      if (
+        typeof distance !== 'number' || distance < 0 ||
+        typeof battery !== 'number' || battery < 0 || battery > 100 ||
+        typeof temperature !== 'number' || temperature < -40 || temperature > 85 ||
+        typeof position !== 'string'
+      ) return;
+
+      const timestamp = new Date().toISOString();
+      const sql = `INSERT INTO sensor_data (sn, distance, battery, temperature, position, timestamp)
+                   VALUES (?, ?, ?, ?, ?, ?)`;
+
+      db.run(sql, [sn, distance, battery, temperature, position, timestamp], (err) => {
+        if (!err) console.log(`📥 写入成功: ${sn}, ${distance}cm`);
+      });
+    });
+  } catch (e) {
+    console.error("❌ MQTT 消息解析失败：", e.message);
+  }
+});
+
+function isRegisteredSN(sn, callback) {
+  db.get(`SELECT 1 FROM devices WHERE sn = ? LIMIT 1`, [sn], (err, row) => {
+    if (err) return callback(err);
+    callback(null, !!row);
+  });
+}
+
+app.post('/api/data', (req, res) => {
+  const { sn, data } = req.body;
+  const sensor = data?.[0];
+  if (!sn || !Array.isArray(data) || !sensor) {
+    return res.status(400).send('请求体必须包含 sn 和 data 数组');
+  }
+
+  isRegisteredSN(sn, (err, valid) => {
+    if (err) return res.status(500).send('验证设备失败');
+    if (!valid) return res.status(403).send('未注册的设备');
 
     const { distance, battery, temperature, position } = sensor;
     if (
@@ -49,65 +80,42 @@ mqttClient.on('message', (topic, message) => {
       typeof temperature !== 'number' || temperature < -40 || temperature > 85 ||
       typeof position !== 'string'
     ) {
-      console.warn("⚠️ MQTT 数据不合法，已忽略");
-      return;
+      return res.status(400).send('数据格式有误');
     }
 
     const timestamp = new Date().toISOString();
     const sql = `INSERT INTO sensor_data (sn, distance, battery, temperature, position, timestamp)
                  VALUES (?, ?, ?, ?, ?, ?)`;
 
-    db.run(sql, [sn, distance, battery, temperature, position, timestamp], (err) => {
-      if (err) console.error("❌ MQTT 数据写入失败：", err.message);
-      else console.log(`📥 MQTT 数据写入成功：${sn}, ${distance}cm`);
+    db.run(sql, [sn, distance, battery, temperature, position, timestamp], function(err) {
+      if (err) {
+        console.error("❌ 数据库写入失败:", err.message);
+        return res.status(500).send("数据库写入失败：" + err.message);
+      }
+      console.log(`📥 写入成功: SN=${sn}, distance=${distance}`);
+      res.send("✅ 数据已写入数据库");
     });
-  } catch (e) {
-    console.error("❌ MQTT 消息解析错误：", e.message);
-  }
-});
-
-// HTTP POST 上传（备用）
-app.post('/api/data', (req, res) => {
-  const { sn, data } = req.body;
-  const sensor = data?.[0];
-  if (!sn || !Array.isArray(data) || !sensor) {
-    return res.status(400).send('请求体必须包含 sn 和 data 数组');
-  }
-
-  const { distance, battery, temperature, position } = sensor;
-  if (
-    typeof distance !== 'number' || distance < 0 ||
-    typeof battery !== 'number' || battery < 0 || battery > 100 ||
-    typeof temperature !== 'number' || temperature < -40 || temperature > 85 ||
-    typeof position !== 'string'
-  ) {
-    return res.status(400).send('data 中字段格式不正确或值异常');
-  }
-
-  const timestamp = new Date().toISOString();
-  const sql = `INSERT INTO sensor_data (sn, distance, battery, temperature, position, timestamp)
-               VALUES (?, ?, ?, ?, ?, ?)`;
-
-  db.run(sql, [sn, distance, battery, temperature, position, timestamp], function (err) {
-    if (err) {
-      console.error("数据库插入错误：", err.message);
-      return res.status(500).send("数据库写入失败");
-    }
-    res.send("✅ 数据已写入数据库");
   });
 });
 
-// 获取所有 SN
+
+app.post('/api/add-sn', (req, res) => {
+  const { sn } = req.body;
+  if (!sn || typeof sn !== 'string') return res.status(400).send('无效 SN');
+
+  db.run(`INSERT OR IGNORE INTO devices (sn) VALUES (?)`, [sn], function (err) {
+    if (err) return res.status(500).send("添加设备失败");
+    res.send(this.changes === 0 ? "设备已存在" : "✅ 新设备已添加");
+  });
+});
+
 app.get('/api/all-sns', (req, res) => {
-  const sql = `SELECT DISTINCT sn FROM sensor_data ORDER BY sn`;
-  db.all(sql, [], (err, rows) => {
+  db.all(`SELECT sn FROM devices ORDER BY sn`, [], (err, rows) => {
     if (err) return res.status(500).send("查询失败");
-    const sns = rows.map(r => r.sn);
-    res.json(sns);
+    res.json(rows.map(r => r.sn));
   });
 });
 
-// 获取最新数据（可选 sn）
 app.get('/api/latest', (req, res) => {
   const sn = req.query.sn;
   let sql = `SELECT * FROM sensor_data`;
@@ -117,13 +125,13 @@ app.get('/api/latest', (req, res) => {
     params.push(sn);
   }
   sql += ` ORDER BY timestamp DESC LIMIT 5`;
+
   db.all(sql, params, (err, rows) => {
     if (err) return res.status(500).send("查询失败");
     res.json(rows);
   });
 });
 
-// 导出 CSV
 app.get('/api/export-csv', (req, res) => {
   const filename = `bin_sensor_${Date.now()}.csv`;
   const filePath = path.join(__dirname, filename);
@@ -134,9 +142,7 @@ app.get('/api/export-csv', (req, res) => {
 
     const csvStream = fastcsv.format({ headers: true });
     csvStream.pipe(ws).on('finish', () => {
-      res.download(filePath, filename, () => {
-        fs.unlinkSync(filePath);
-      });
+      res.download(filePath, filename, () => fs.unlinkSync(filePath));
     });
 
     rows.forEach(row => {
