@@ -13,14 +13,14 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-// MQTT 连接
+// MQTT Connection
 const mqttClient = mqtt.connect(process.env.MQTT_BROKER_URL);
 
 mqttClient.on('connect', () => {
-  console.log("✅ 已连接到 MQTT Broker");
+  console.log("✅ Connected to MQTT Broker");
   mqttClient.subscribe('sensor/bin', (err) => {
-    if (err) console.error("❌ MQTT 订阅失败：", err.message);
-    else console.log("✅ 已订阅主题：sensor/bin");
+    if (err) console.error("❌ MQTT subscribe failed:", err.message);
+    else console.log("✅ Subscribed to topic: sensor/bin");
   });
 });
 
@@ -47,14 +47,15 @@ mqttClient.on('message', (topic, message) => {
                    VALUES (?, ?, ?, ?, ?, ?)`;
 
       db.run(sql, [sn, distance, battery, temperature, position, timestamp], (err) => {
-        if (!err) console.log(`📥 写入成功: ${sn}, ${distance}cm`);
+        if (!err) console.log(`📥 Inserted: ${sn}, ${distance}cm`);
       });
     });
   } catch (e) {
-    console.error("❌ MQTT 消息解析失败：", e.message);
+    console.error("❌ MQTT message parse failed:", e.message);
   }
 });
 
+// Returns true/false if SN is registered
 function isRegisteredSN(sn, callback) {
   db.get(`SELECT 1 FROM devices WHERE sn = ? LIMIT 1`, [sn], (err, row) => {
     if (err) return callback(err);
@@ -62,16 +63,17 @@ function isRegisteredSN(sn, callback) {
   });
 }
 
+// API to insert new sensor data
 app.post('/api/data', (req, res) => {
   const { sn, data } = req.body;
   const sensor = data?.[0];
   if (!sn || !Array.isArray(data) || !sensor) {
-    return res.status(400).send('请求体必须包含 sn 和 data 数组');
+    return res.status(400).send('Request body must contain sn and a data array');
   }
 
   isRegisteredSN(sn, (err, valid) => {
-    if (err) return res.status(500).send('验证设备失败');
-    if (!valid) return res.status(403).send('未注册的设备');
+    if (err) return res.status(500).send('Failed to validate device');
+    if (!valid) return res.status(403).send('Device not registered');
 
     const { distance, battery, temperature, position } = sensor;
     if (
@@ -80,7 +82,7 @@ app.post('/api/data', (req, res) => {
       typeof temperature !== 'number' || temperature < -40 || temperature > 85 ||
       typeof position !== 'string'
     ) {
-      return res.status(400).send('数据格式有误');
+      return res.status(400).send('Invalid data format');
     }
 
     const timestamp = new Date().toISOString();
@@ -89,33 +91,35 @@ app.post('/api/data', (req, res) => {
 
     db.run(sql, [sn, distance, battery, temperature, position, timestamp], function(err) {
       if (err) {
-        console.error("❌ 数据库写入失败:", err.message);
-        return res.status(500).send("数据库写入失败：" + err.message);
+        console.error("❌ Database insert failed:", err.message);
+        return res.status(500).send("Database insert failed: " + err.message);
       }
-      console.log(`📥 写入成功: SN=${sn}, distance=${distance}`);
-      res.send("✅ 数据已写入数据库");
+      console.log(`📥 Inserted: SN=${sn}, distance=${distance}`);
+      res.send("✅ Data inserted into database");
     });
   });
 });
 
-
+// Add a device SN to registration table
 app.post('/api/add-sn', (req, res) => {
   const { sn } = req.body;
-  if (!sn || typeof sn !== 'string') return res.status(400).send('无效 SN');
+  if (!sn || typeof sn !== 'string') return res.status(400).send('Invalid SN');
 
   db.run(`INSERT OR IGNORE INTO devices (sn) VALUES (?)`, [sn], function (err) {
-    if (err) return res.status(500).send("添加设备失败");
-    res.send(this.changes === 0 ? "设备已存在" : "✅ 新设备已添加");
+    if (err) return res.status(500).send("Failed to add device");
+    res.send(this.changes === 0 ? "Device already exists" : "✅ New device added");
   });
 });
 
+// Get all registered SNs
 app.get('/api/all-sns', (req, res) => {
   db.all(`SELECT sn FROM devices ORDER BY sn`, [], (err, rows) => {
-    if (err) return res.status(500).send("查询失败");
+    if (err) return res.status(500).send("Query failed");
     res.json(rows.map(r => r.sn));
   });
 });
 
+// Get latest 5 data records (optionally for a device SN)
 app.get('/api/latest', (req, res) => {
   const sn = req.query.sn;
   let sql = `SELECT * FROM sensor_data`;
@@ -127,18 +131,19 @@ app.get('/api/latest', (req, res) => {
   sql += ` ORDER BY timestamp DESC LIMIT 5`;
 
   db.all(sql, params, (err, rows) => {
-    if (err) return res.status(500).send("查询失败");
+    if (err) return res.status(500).send("Query failed");
     res.json(rows);
   });
 });
 
+// Export all sensor data as CSV
 app.get('/api/export-csv', (req, res) => {
   const filename = `bin_sensor_${Date.now()}.csv`;
   const filePath = path.join(__dirname, filename);
   const ws = fs.createWriteStream(filePath);
 
   db.all(`SELECT * FROM sensor_data ORDER BY timestamp DESC`, [], (err, rows) => {
-    if (err) return res.status(500).send("导出失败");
+    if (err) return res.status(500).send("Export failed");
 
     const csvStream = fastcsv.format({ headers: true });
     csvStream.pipe(ws).on('finish', () => {

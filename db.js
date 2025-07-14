@@ -3,9 +3,9 @@ const path = require('path');
 
 const db = new sqlite3.Database(path.join(__dirname, 'database.db'), (err) => {
   if (err) {
-    console.error("❌ 无法连接数据库：", err.message);
+    console.error("❌ Failed to connect to database:", err.message);
   } else {
-    console.log("✅ 已连接到 SQLite 数据库");
+    console.log("✅ Connected to SQLite database");
   }
 });
 

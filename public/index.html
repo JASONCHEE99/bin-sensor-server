@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <title>Bin Sensor Monitor</title>
@@ -13,28 +13,28 @@
   </style>
 </head>
 <body>
-  <h2>➕ 添加新设备</h2>
-  <input id="newSnInput" placeholder="新设备 SN" />
-  <button onclick="addDevice()">添加设备</button>
+  <h2>➕ Add New Device</h2>
+  <input id="newSnInput" placeholder="New Device SN" />
+  <button onclick="addDevice()">Add Device</button>
 
-  <h2>📤 发送数据</h2>
-  <input id="snInput" placeholder="设备 SN" />
-  <input id="distanceInput" placeholder="距离 (cm)" />
-  <input id="batteryInput" placeholder="电量 (%)" />
-  <input id="tempInput" placeholder="温度 (°C)" />
-  <input id="positionInput" placeholder="姿态（如 tilt）" />
-  <button onclick="sendData()">发送数据</button>
+  <h2>📤 Send Data</h2>
+  <input id="snInput" placeholder="Device SN" />
+  <input id="distanceInput" placeholder="Distance (cm)" />
+  <input id="batteryInput" placeholder="Battery (%)" />
+  <input id="tempInput" placeholder="Temperature (°C)" />
+  <input id="positionInput" placeholder="Position (e.g., tilt)" />
+  <button onclick="sendData()">Send Data</button>
 
-  <h3>📈 数据显示与导出</h3>
-  <label for="snSelect">选择设备 SN:</label>
+  <h3>📈 Data Display & Export</h3>
+  <label for="snSelect">Select Device SN:</label>
   <select id="snSelect" onchange="fetchData()">
-    <option value="">请选择设备 SN</option>
+    <option value="">Please select a device SN</option>
   </select>
 
-  <input id="thresholdInput" placeholder="阈值距离 (cm)" />
-  <button onclick="setThreshold()">设置阈值</button>
-  <button onclick="fetchData()">🔄 刷新数据</button>
-  <button onclick="exportCSV()">⬇️ 导出 CSV</button>
+  <input id="thresholdInput" placeholder="Threshold Distance (cm)" />
+  <button onclick="setThreshold()">Set Threshold</button>
+  <button onclick="fetchData()">🔄 Refresh Data</button>
+  <button onclick="exportCSV()">⬇️ Export CSV</button>
   <div id="alertMsg"></div>
 
   <div id="dataList"></div>
@@ -44,7 +44,7 @@
 
     function formatSGT(datetimeStr) {
       const date = new Date(datetimeStr);
-      return new Intl.DateTimeFormat('zh-SG', {
+      return new Intl.DateTimeFormat('en-SG', {
         year: 'numeric', month: '2-digit', day: '2-digit',
         hour: '2-digit', minute: '2-digit', second: '2-digit',
         hour12: false,
@@ -56,7 +56,7 @@
       const res = await fetch('/api/all-sns');
       const sns = await res.json();
       const select = document.getElementById('snSelect');
-      select.innerHTML = `<option value="">请选择设备 SN</option>`;
+      select.innerHTML = `<option value="">Please select a device SN</option>`;
       sns.forEach(sn => {
         const option = document.createElement('option');
         option.value = sn;
@@ -68,7 +68,7 @@
     async function fetchData() {
       const selectedSn = document.getElementById('snSelect').value;
       if (!selectedSn) {
-        document.getElementById('dataList').innerHTML = '<p>请先选择设备 SN</p>';
+        document.getElementById('dataList').innerHTML = '<p>Please select a device SN first.</p>';
         document.getElementById('alertMsg').textContent = '';
         return;
       }
@@ -77,13 +77,13 @@
       const data = await res.json();
 
       if (!data.length) {
-        document.getElementById('dataList').innerHTML = '<p>无数据</p>';
+        document.getElementById('dataList').innerHTML = '<p>No data available</p>';
         document.getElementById('alertMsg').textContent = '';
         return;
       }
 
       let html = `<table><thead><tr>
-        <th>SN</th><th>距离 (cm)</th><th>电量 (%)</th><th>温度 (°C)</th><th>姿态</th><th>时间</th>
+        <th>SN</th><th>Distance (cm)</th><th>Battery (%)</th><th>Temperature (°C)</th><th>Position</th><th>Time</th>
       </tr></thead><tbody>`;
 
       let thresholdAlert = false;
@@ -103,47 +103,46 @@
 
       document.getElementById('dataList').innerHTML = html;
       document.getElementById('alertMsg').textContent = thresholdAlert
-        ? `⚠️ 有距离低于阈值 ${threshold} cm！`
+        ? `⚠️ Some distances are below the threshold of ${threshold} cm!`
         : '';
     }
 
-async function sendData() {
-  const sn = document.getElementById('snInput').value.trim();
-  const distance = parseFloat(document.getElementById('distanceInput').value);
-  const battery = parseInt(document.getElementById('batteryInput').value);
-  const temperature = parseFloat(document.getElementById('tempInput').value);
-  const position = document.getElementById('positionInput').value.trim();
+    async function sendData() {
+      const sn = document.getElementById('snInput').value.trim();
+      const distance = parseFloat(document.getElementById('distanceInput').value);
+      const battery = parseInt(document.getElementById('batteryInput').value);
+      const temperature = parseFloat(document.getElementById('tempInput').value);
+      const position = document.getElementById('positionInput').value.trim();
 
-  if (!sn || isNaN(distance) || isNaN(battery) || isNaN(temperature) || !position) {
-    alert("请输入所有字段的有效值！");
-    return;
-  }
+      if (!sn || isNaN(distance) || isNaN(battery) || isNaN(temperature) || !position) {
+        alert("Please enter valid values for all fields.");
+        return;
+      }
 
-  const payload = {
-    sn,
-    data: [{ distance, battery, temperature, position }]
-  };
+      const payload = {
+        sn,
+        data: [{ distance, battery, temperature, position }]
+      };
 
-  const res = await fetch('/api/data', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
+      const res = await fetch('/api/data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
 
-  const text = await res.text();
-  alert(text);
+      const text = await res.text();
+      alert(text);
 
-  const selectedSn = document.getElementById('snSelect').value;
-  if (selectedSn === sn) {
-    fetchData();
-  }
-}
-
+      const selectedSn = document.getElementById('snSelect').value;
+      if (selectedSn === sn) {
+        fetchData();
+      }
+    }
 
     async function addDevice() {
       const newSn = document.getElementById('newSnInput').value.trim();
       if (!newSn) {
-        alert("请输入有效的设备 SN");
+        alert("Please enter a valid device SN.");
         return;
       }
 
@@ -161,7 +160,7 @@ async function sendData() {
     function setThreshold() {
       const val = parseFloat(document.getElementById('thresholdInput').value);
       if (isNaN(val) || val <= 0) {
-        alert("请输入有效的阈值距离");
+        alert("Please enter a valid threshold distance.");
         return;
       }
       threshold = val;
