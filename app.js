@@ -18,9 +18,9 @@ const mqttClient = mqtt.connect(process.env.MQTT_BROKER_URL);
 
 mqttClient.on('connect', () => {
   console.log("✅ Connected to MQTT Broker");
-  mqttClient.subscribe('sensor/bin', (err) => {
+  mqttClient.subscribe(process.env.MQTT_TOPIC, (err) => {
     if (err) console.error("❌ MQTT subscribe failed:", err.message);
-    else console.log("✅ Subscribed to topic: sensor/bin");
+    else console.log(`✅ Subscribed to topic: ${process.env.MQTT_TOPIC}`);
   });
 });
 
