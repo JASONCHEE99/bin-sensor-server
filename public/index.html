@@ -112,7 +112,7 @@ function formatSgt(dt) {
   return new Date(dt).toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Singapore' });
 }
 
-// 提示栏
+// 展示提示栏
 function showAlert(msg, isDanger=false) {
   const div = document.getElementById('alertMsg');
   div.textContent = msg;
@@ -122,39 +122,49 @@ function showAlert(msg, isDanger=false) {
   setTimeout(() => { div.style.display = 'none'; }, 3000);
 }
 
-// 设备列表加载
+// 设备列表
 async function loadSnList() {
-  const res = await fetch('/api/all-sns');
-  const sns = await res.json();
-  const select = document.getElementById('snSelect');
-  select.innerHTML = `<option value="">请选择SN</option>`;
-  sns.forEach(sn => {
-    const op = document.createElement('option'); op.value = sn; op.textContent = sn;
-    select.appendChild(op);
-  });
+  try {
+    const res = await fetch('/api/all-sns');
+    const sns = await res.json();
+    const select = document.getElementById('snSelect');
+    select.innerHTML = `<option value="">请选择SN</option>`;
+    sns.forEach(sn => {
+      const op = document.createElement('option'); op.value = sn; op.textContent = sn;
+      select.appendChild(op);
+    });
+  } catch(e) {
+    showAlert("加载设备列表失败", true);
+  }
 }
 
-// 查询数据并渲染
+// 拉取数据并渲染表格
 async function fetchData() {
   const sn = document.getElementById('snSelect').value;
   if (!sn) { document.getElementById('dataList').innerHTML = '<p>请选择设备</p>'; return;}
-  const res = await fetch(`/api/latest?sn=${encodeURIComponent(sn)}`);
-  const data = await res.json();
-  if (!data.length) { document.getElementById('dataList').innerHTML = '<p>无数据</p>'; return;}
-  let html = `<table><thead><tr><th>SN</th><th>距离(cm)</th><th>电量(%)</th><th>温度(°C)</th><th>位置</th><th>时间</th></tr></thead><tbody>`;
-  data.forEach(r => {
-    const danger = threshold !== null && r.distance < threshold;
-    html += `<tr${danger?' class="danger-row"':''}>
-      <td>${r.sn}</td>
-      <td>${r.distance}</td>
-      <td>${r.battery}</td>
-      <td>${r.temperature}</td>
-      <td>${r.position}</td>
-      <td>${formatSgt(r.timestamp)}</td>
-    </tr>`;
-  });
-  html += '</tbody></table>';
-  document.getElementById('dataList').innerHTML = html;
+  try {
+    const res = await fetch(`/api/latest?sn=${encodeURIComponent(sn)}`);
+    const data = await res.json();
+    if (!data.length) { document.getElementById('dataList').innerHTML = '<p>无数据</p>'; return;}
+    let html = `<table><thead><tr>
+      <th>SN</th><th>距离(cm)</th><th>电量(%)</th><th>温度(°C)</th><th>位置</th><th>时间</th>
+      </tr></thead><tbody>`;
+    data.forEach(r => {
+      const danger = threshold !== null && r.distance < threshold;
+      html += `<tr${danger?' class="danger-row"':''}>
+        <td>${r.sn}</td>
+        <td>${r.distance}</td>
+        <td>${r.battery}</td>
+        <td>${r.temperature}</td>
+        <td>${r.position}</td>
+        <td>${formatSgt(r.timestamp)}</td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+    document.getElementById('dataList').innerHTML = html;
+  } catch(e) {
+    showAlert("获取数据失败", true);
+  }
 }
 
 // 手动上传数据
@@ -169,23 +179,26 @@ async function sendData() {
     showAlert("请填全所有字段");
     return;
   }
+  try {
+    const payload = {
+      sn,
+      data: [{ distance, battery, temperature, position }]
+    };
 
-  const payload = {
-    sn,
-    data: [{ distance, battery, temperature, position }]
-  };
+    const res = await fetch('/api/data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
 
-  const res = await fetch('/api/data', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
+    const text = await res.text();
+    showAlert(text);
 
-  const text = await res.text();
-  showAlert(text);
-
-  const selectedSn = document.getElementById('snSelect').value;
-  if (selectedSn === sn) fetchData();
+    const selectedSn = document.getElementById('snSelect').value;
+    if (selectedSn === sn) fetchData();
+  } catch(e) {
+    showAlert("上传失败", true);
+  }
 }
 
 // 新增设备
@@ -195,11 +208,56 @@ async function addDevice() {
     showAlert("请输入SN");
     return;
   }
-  const res = await fetch('/api/add-sn', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sn: newSn })
-  });
-  const text = await res.text();
-  showAlert(text);
-  loadSn
+  try {
+    const res = await fetch('/api/add-sn', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sn: newSn })
+    });
+    const text = await res.text();
+    showAlert(text);
+    loadSnList();
+  } catch(e) {
+    showAlert("添加设备失败", true);
+  }
+}
+
+// 阈值设置
+function setThreshold() {
+  const val = parseFloat(document.getElementById('thresholdInput').value);
+  if(isNaN(val) || val<=0) {
+    showAlert('请输入正确的距离阈值');
+    return;
+  }
+  threshold = val;
+  fetchData();
+}
+
+// 导出CSV
+function exportCSV() {
+  window.location.href = "/api/export-csv";
+}
+
+// ★★（可选，需你的服务器侧支持）自动实时刷新：WebSocket模式 ★★
+/*
+function setupWebSocket() {
+  const ws = new WebSocket('ws://localhost:3001'); // 你的WS地址
+  ws.onmessage = function(event) {
+    const data = JSON.parse(event.data);
+    const selectedSn = document.getElementById('snSelect').value;
+    if (selectedSn === data.sn) fetchData();
+  };
+  ws.onclose = () => setTimeout(setupWebSocket, 2000);
+  ws.onerror = () => ws.close();
+}
+*/
+
+// 页面初始化
+window.onload = function() {
+  loadSnList();
+  // 如需实时WebSocket功能，请取消下行注释
+  // setupWebSocket();
+  // 如需自动定时刷新可取消下行注释
+  // setInterval(fetchData, 15000); // 每15秒自动刷新
+};
+</script>
