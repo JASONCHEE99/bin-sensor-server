@@ -112,14 +112,15 @@ function formatSgt(dt) {
   return new Date(dt).toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Singapore' });
 }
 
-// 展示提示栏
+// 展示提示栏（警告/一般信息）
 function showAlert(msg, isDanger=false) {
   const div = document.getElementById('alertMsg');
   div.textContent = msg;
-  div.style.display = 'block';
+  div.style.display = msg ? 'block' : 'none';
   div.style.color = isDanger ? 'white' : '#444';
   div.style.backgroundColor = isDanger ? '#e94c3c' : '#e6e6e6';
-  setTimeout(() => { div.style.display = 'none'; }, 3000);
+  // 有内容3秒后消失，否则就隐藏
+  if (msg) setTimeout(() => { div.style.display = 'none'; }, 3000);
 }
 
 // 设备列表
@@ -138,19 +139,29 @@ async function loadSnList() {
   }
 }
 
-// 拉取数据并渲染表格
+// 拉取数据并渲染表格和警告
 async function fetchData() {
   const sn = document.getElementById('snSelect').value;
-  if (!sn) { document.getElementById('dataList').innerHTML = '<p>请选择设备</p>'; return;}
+  if (!sn) {
+    document.getElementById('dataList').innerHTML = '<p>请选择设备</p>';
+    showAlert("", false);
+    return;
+  }
   try {
     const res = await fetch(`/api/latest?sn=${encodeURIComponent(sn)}`);
     const data = await res.json();
-    if (!data.length) { document.getElementById('dataList').innerHTML = '<p>无数据</p>'; return;}
+    if (!data.length) {
+      document.getElementById('dataList').innerHTML = '<p>无数据</p>';
+      showAlert("", false);
+      return;
+    }
     let html = `<table><thead><tr>
       <th>SN</th><th>距离(cm)</th><th>电量(%)</th><th>温度(°C)</th><th>位置</th><th>时间</th>
       </tr></thead><tbody>`;
+    let dangerExist = false;
     data.forEach(r => {
       const danger = threshold !== null && r.distance < threshold;
+      if (danger) dangerExist = true;
       html += `<tr${danger?' class="danger-row"':''}>
         <td>${r.sn}</td>
         <td>${r.distance}</td>
@@ -162,6 +173,13 @@ async function fetchData() {
     });
     html += '</tbody></table>';
     document.getElementById('dataList').innerHTML = html;
+
+    // 显示或清除警告提示
+    if (threshold !== null && dangerExist) {
+      showAlert("⚠️ 有距离小于你设置的阈值 " + threshold + "cm，请警惕！", true);
+    } else {
+      showAlert("", false); // 清空提示
+    }
   } catch(e) {
     showAlert("获取数据失败", true);
   }
@@ -241,11 +259,15 @@ function exportCSV() {
 // ★★（可选，需你的服务器侧支持）自动实时刷新：WebSocket模式 ★★
 /*
 function setupWebSocket() {
-  const ws = new WebSocket('ws://localhost:3001'); // 你的WS地址
+  const ws = new WebSocket('ws://localhost:3001');
   ws.onmessage = function(event) {
     const data = JSON.parse(event.data);
     const selectedSn = document.getElementById('snSelect').value;
     if (selectedSn === data.sn) fetchData();
+    // 实时推送警告
+    if (threshold !== null && data.distance < threshold) {
+      showAlert("⚠️ 有距离小于你设置的阈值 " + threshold + "cm，请警惕！", true);
+    }
   };
   ws.onclose = () => setTimeout(setupWebSocket, 2000);
   ws.onerror = () => ws.close();
@@ -255,9 +277,9 @@ function setupWebSocket() {
 // 页面初始化
 window.onload = function() {
   loadSnList();
-  // 如需实时WebSocket功能，请取消下行注释
+  // 如需实时WebSocket功能，取消下一行注释
   // setupWebSocket();
-  // 如需自动定时刷新可取消下行注释
+  // 如需自动定时刷新, 可取消下行注释
   // setInterval(fetchData, 15000); // 每15秒自动刷新
-};
+}
 </script>
