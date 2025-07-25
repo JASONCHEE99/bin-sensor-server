@@ -2,10 +2,10 @@
   "name": "bin-sensor-server",
   "version": "1.0.0",
   "main": "server.js",
- "scripts": {
-  "start": "node server.js",
-  "dev": "nodemon server.js"
-},
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
   "dependencies": {
     "cors": "^2.8.5",
     "date-fns": "^3.6.0",
@@ -13,7 +13,8 @@
     "express": "^4.21.2",
     "fast-csv": "^4.3.6",
     "mqtt": "^5.13.2",
-    "sqlite3": "^5.1.7"
+    "sqlite3": "^5.1.7",
+    "ws": "^8.18.3"
   },
   "description": "**垃圾桶传感器监测系统**",
   "repository": {
