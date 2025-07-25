@@ -1,7 +1,7 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8">
   <title>Bin Sensor Monitor</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <style>
@@ -93,7 +93,7 @@
     <div class="actions">
       <label for="snSelect">选择设备</label>
       <select id="snSelect" onchange="fetchData()">
-        <option value="">请先选择SN</option>
+        <option value="">请选择SN</option>
       </select>
       <input id="thresholdInput" type="number" min="0" placeholder="距离阈值(cm)" style="width:120px"/>
       <button onclick="setThreshold()">设置阈值</button>
@@ -104,49 +104,102 @@
     <div id="dataList"></div>
   </div>
 
-  <script>
-    let threshold = null;
+<script>
+let threshold = null;
 
-    function formatSgt(dt) {
-      return new Date(dt).toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Singapore' });
-    }
+// 格式化时间为新加坡时区
+function formatSgt(dt) {
+  return new Date(dt).toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Singapore' });
+}
 
-    async function loadSnList() {
-      const res = await fetch('/api/all-sns');
-      const sns = await res.json();
-      const select = document.getElementById('snSelect');
-      select.innerHTML = `<option value="">请选择SN</option>`;
-      sns.forEach(sn => {
-        const op = document.createElement('option'); op.value = sn; op.textContent = sn;
-        select.appendChild(op);
-      });
-    }
+// 提示栏
+function showAlert(msg, isDanger=false) {
+  const div = document.getElementById('alertMsg');
+  div.textContent = msg;
+  div.style.display = 'block';
+  div.style.color = isDanger ? 'white' : '#444';
+  div.style.backgroundColor = isDanger ? '#e94c3c' : '#e6e6e6';
+  setTimeout(() => { div.style.display = 'none'; }, 3000);
+}
 
-    async function fetchData() {
-      const sn = document.getElementById('snSelect').value;
-      if (!sn) { document.getElementById('dataList').innerHTML = '<p>请选择设备</p>'; return;}
-      const res = await fetch(`/api/latest?sn=${encodeURIComponent(sn)}`);
-      const data = await res.json();
-      if (!data.length) { document.getElementById('dataList').innerHTML = '<p>无数据</p>'; return;}
-      let html = `<table><thead><tr><th>SN</th><th>距离</th><th>电量</th><th>温度</th><th>位置</th><th>时间</th></tr></thead><tbody>`;
-      data.forEach(r => {
-        const danger = threshold !== null && r.distance < threshold;
-        html += `<tr${danger?' class="danger-row"':''}>
-          <td>${r.sn}</td>
-          <td>${r.distance}</td>
-          <td>${r.battery}</td>
-          <td>${r.temperature}</td>
-          <td>${r.position}</td>
-          <td>${formatSgt(r.timestamp)}</td>
-        </tr>`;
-      });
-      html += '</tbody></table>';
-      document.getElementById('dataList').innerHTML = html;
-    }
+// 设备列表加载
+async function loadSnList() {
+  const res = await fetch('/api/all-sns');
+  const sns = await res.json();
+  const select = document.getElementById('snSelect');
+  select.innerHTML = `<option value="">请选择SN</option>`;
+  sns.forEach(sn => {
+    const op = document.createElement('option'); op.value = sn; op.textContent = sn;
+    select.appendChild(op);
+  });
+}
 
-    async function sendData() {
-      const sn = document.getElementById('snInput').value.trim();
-      const distance = parseFloat(document.getElementById('distanceInput').value);
-      const battery = parseInt(document.getElementById('batteryInput').value);
-      const temperature = parseFloat(document.getElementById('tempInput').value);
-      const position = document.getElementById('positionInput
+// 查询数据并渲染
+async function fetchData() {
+  const sn = document.getElementById('snSelect').value;
+  if (!sn) { document.getElementById('dataList').innerHTML = '<p>请选择设备</p>'; return;}
+  const res = await fetch(`/api/latest?sn=${encodeURIComponent(sn)}`);
+  const data = await res.json();
+  if (!data.length) { document.getElementById('dataList').innerHTML = '<p>无数据</p>'; return;}
+  let html = `<table><thead><tr><th>SN</th><th>距离(cm)</th><th>电量(%)</th><th>温度(°C)</th><th>位置</th><th>时间</th></tr></thead><tbody>`;
+  data.forEach(r => {
+    const danger = threshold !== null && r.distance < threshold;
+    html += `<tr${danger?' class="danger-row"':''}>
+      <td>${r.sn}</td>
+      <td>${r.distance}</td>
+      <td>${r.battery}</td>
+      <td>${r.temperature}</td>
+      <td>${r.position}</td>
+      <td>${formatSgt(r.timestamp)}</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  document.getElementById('dataList').innerHTML = html;
+}
+
+// 手动上传数据
+async function sendData() {
+  const sn = document.getElementById('snInput').value.trim();
+  const distance = parseFloat(document.getElementById('distanceInput').value);
+  const battery = parseInt(document.getElementById('batteryInput').value);
+  const temperature = parseFloat(document.getElementById('tempInput').value);
+  const position = document.getElementById('positionInput').value.trim();
+
+  if (!sn || isNaN(distance) || isNaN(battery) || isNaN(temperature) || !position) {
+    showAlert("请填全所有字段");
+    return;
+  }
+
+  const payload = {
+    sn,
+    data: [{ distance, battery, temperature, position }]
+  };
+
+  const res = await fetch('/api/data', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  const text = await res.text();
+  showAlert(text);
+
+  const selectedSn = document.getElementById('snSelect').value;
+  if (selectedSn === sn) fetchData();
+}
+
+// 新增设备
+async function addDevice() {
+  const newSn = document.getElementById('newSnInput').value.trim();
+  if (!newSn) {
+    showAlert("请输入SN");
+    return;
+  }
+  const res = await fetch('/api/add-sn', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sn: newSn })
+  });
+  const text = await res.text();
+  showAlert(text);
+  loadSn
