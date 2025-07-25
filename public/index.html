@@ -3,108 +3,145 @@
 <head>
   <meta charset="UTF-8" />
   <title>Bin Sensor Monitor</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
   <style>
-    body { font-family: Arial, sans-serif; padding: 20px; max-width: 1200px; margin: auto; }
-    input, select, button { margin: 5px; padding: 8px; }
-    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
-    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
-    th { background-color: #f0f0f0; }
-    #alertMsg { color: red; font-weight: bold; margin-top: 10px; }
+    :root {
+      --main-color: #4e73df;
+      --danger-color: #e94c3c;
+      --gray: #f8f9fc;
+      --radius: 8px;
+    }
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      padding: 30px;
+      max-width: 900px;
+      margin: auto;
+      background: var(--gray);
+      color: #222;
+    }
+    .section { background: #fff; padding: 18px 20px; border-radius: var(--radius); box-shadow: 0 1px 4px #ddd; margin-bottom: 24px;}
+    h2 { color: var(--main-color); font-size: 1.5em; margin-top: 0; }
+    label { font-weight: bold; margin-right: 12px; }
+    input, select, button {
+      padding: 7px 11px;
+      border: 1px solid #cccccc;
+      border-radius: var(--radius);
+      margin-right: 8px;
+      outline: none;
+      font-size: 1em;
+    }
+    button {
+      background: var(--main-color);
+      color: #fff;
+      border: none;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    button:hover { background: #3452bf; }
+    .btn-danger { background: var(--danger-color);}
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      font-size: 1em;
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: #fff;
+    }
+    th, td {
+      padding: 8px 10px;
+      border-bottom: 1px solid #eee;
+    }
+    th { background: #f1f5fa; }
+    tr.danger-row { background: #ffe4e1;}
+    @media (max-width:700px) {
+      table, thead, tbody, th, td, tr { display: block; }
+      th, td { padding: 9px 6px;}
+      tr { margin-bottom:12px;}
+    }
+    #alertMsg {
+      display:none;
+      margin: 15px 0;
+      padding: 10px;
+      border-radius: var(--radius);
+      font-weight: 600;
+      text-align: center;
+      transition: all .2s;
+    }
+    .actions { margin-bottom: 16px;}
   </style>
 </head>
 <body>
-  <h2>➕ Add New Device</h2>
-  <input id="newSnInput" placeholder="New Device SN" />
-  <button onclick="addDevice()">Add Device</button>
+  <div class="section">
+    <h2>设备管理</h2>
+    <label for="newSnInput">新增SN:</label>
+    <input id="newSnInput" placeholder="输入新设备SN" style="width:140px"/>
+    <button onclick="addDevice()">添加设备</button>
+  </div>
 
-  <h2>📤 Send Data</h2>
-  <input id="snInput" placeholder="Device SN" />
-  <input id="distanceInput" placeholder="Distance (cm)" />
-  <input id="batteryInput" placeholder="Battery (%)" />
-  <input id="tempInput" placeholder="Temperature (°C)" />
-  <input id="positionInput" placeholder="Position (e.g., tilt)" />
-  <button onclick="sendData()">Send Data</button>
+  <div class="section">
+    <h2>上传数据</h2>
+    <input id="snInput" placeholder="SN" style="width:110px"/>
+    <input id="distanceInput" type="number" min="0" placeholder="距离(cm)" style="width:90px"/>
+    <input id="batteryInput" type="number" min="0" max="100" placeholder="电量(%)" style="width:80px"/>
+    <input id="tempInput" type="number" min="-40" max="85" placeholder="温度(°C)" style="width:90px"/>
+    <input id="positionInput" placeholder="位置" style="width:70px"/>
+    <button onclick="sendData()">手动上传</button>
+  </div>
 
-  <h3>📈 Data Display & Export</h3>
-  <label for="snSelect">Select Device SN:</label>
-  <select id="snSelect" onchange="fetchData()">
-    <option value="">Please select a device SN</option>
-  </select>
-
-  <input id="thresholdInput" placeholder="Threshold Distance (cm)" />
-  <button onclick="setThreshold()">Set Threshold</button>
-  <button onclick="fetchData()">🔄 Refresh Data</button>
-  <button onclick="exportCSV()">⬇️ Export CSV</button>
-  <div id="alertMsg"></div>
-
-  <div id="dataList"></div>
+  <div class="section">
+    <div class="actions">
+      <label for="snSelect">选择设备</label>
+      <select id="snSelect" onchange="fetchData()">
+        <option value="">请先选择SN</option>
+      </select>
+      <input id="thresholdInput" type="number" min="0" placeholder="距离阈值(cm)" style="width:120px"/>
+      <button onclick="setThreshold()">设置阈值</button>
+      <button onclick="fetchData()">刷新</button>
+      <button onclick="exportCSV()">导出CSV</button>
+    </div>
+    <div id="alertMsg"></div>
+    <div id="dataList"></div>
+  </div>
 
   <script>
     let threshold = null;
 
-    function formatSGT(datetimeStr) {
-      const date = new Date(datetimeStr);
-      return new Intl.DateTimeFormat('en-SG', {
-        year: 'numeric', month: '2-digit', day: '2-digit',
-        hour: '2-digit', minute: '2-digit', second: '2-digit',
-        hour12: false,
-        timeZone: 'Asia/Singapore'
-      }).format(date);
+    function formatSgt(dt) {
+      return new Date(dt).toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Singapore' });
     }
 
     async function loadSnList() {
       const res = await fetch('/api/all-sns');
       const sns = await res.json();
       const select = document.getElementById('snSelect');
-      select.innerHTML = `<option value="">Please select a device SN</option>`;
+      select.innerHTML = `<option value="">请选择SN</option>`;
       sns.forEach(sn => {
-        const option = document.createElement('option');
-        option.value = sn;
-        option.textContent = sn;
-        select.appendChild(option);
+        const op = document.createElement('option'); op.value = sn; op.textContent = sn;
+        select.appendChild(op);
       });
     }
 
     async function fetchData() {
-      const selectedSn = document.getElementById('snSelect').value;
-      if (!selectedSn) {
-        document.getElementById('dataList').innerHTML = '<p>Please select a device SN first.</p>';
-        document.getElementById('alertMsg').textContent = '';
-        return;
-      }
-
-      const res = await fetch(`/api/latest?sn=${encodeURIComponent(selectedSn)}`);
+      const sn = document.getElementById('snSelect').value;
+      if (!sn) { document.getElementById('dataList').innerHTML = '<p>请选择设备</p>'; return;}
+      const res = await fetch(`/api/latest?sn=${encodeURIComponent(sn)}`);
       const data = await res.json();
-
-      if (!data.length) {
-        document.getElementById('dataList').innerHTML = '<p>No data available</p>';
-        document.getElementById('alertMsg').textContent = '';
-        return;
-      }
-
-      let html = `<table><thead><tr>
-        <th>SN</th><th>Distance (cm)</th><th>Battery (%)</th><th>Temperature (°C)</th><th>Position</th><th>Time</th>
-      </tr></thead><tbody>`;
-
-      let thresholdAlert = false;
-      data.forEach(entry => {
-        const danger = threshold !== null && entry.distance < threshold;
-        if (danger) thresholdAlert = true;
-        html += `<tr>
-          <td>${entry.sn}</td>
-          <td style="background:${danger ? '#ffcccc' : 'transparent'}">${entry.distance}</td>
-          <td>${entry.battery}</td>
-          <td>${entry.temperature}</td>
-          <td>${entry.position}</td>
-          <td>${formatSGT(entry.timestamp)}</td>
+      if (!data.length) { document.getElementById('dataList').innerHTML = '<p>无数据</p>'; return;}
+      let html = `<table><thead><tr><th>SN</th><th>距离</th><th>电量</th><th>温度</th><th>位置</th><th>时间</th></tr></thead><tbody>`;
+      data.forEach(r => {
+        const danger = threshold !== null && r.distance < threshold;
+        html += `<tr${danger?' class="danger-row"':''}>
+          <td>${r.sn}</td>
+          <td>${r.distance}</td>
+          <td>${r.battery}</td>
+          <td>${r.temperature}</td>
+          <td>${r.position}</td>
+          <td>${formatSgt(r.timestamp)}</td>
         </tr>`;
       });
       html += '</tbody></table>';
-
       document.getElementById('dataList').innerHTML = html;
-      document.getElementById('alertMsg').textContent = thresholdAlert
-        ? `⚠️ Some distances are below the threshold of ${threshold} cm!`
-        : '';
     }
 
     async function sendData() {
@@ -112,69 +149,4 @@
       const distance = parseFloat(document.getElementById('distanceInput').value);
       const battery = parseInt(document.getElementById('batteryInput').value);
       const temperature = parseFloat(document.getElementById('tempInput').value);
-      const position = document.getElementById('positionInput').value.trim();
-
-      if (!sn || isNaN(distance) || isNaN(battery) || isNaN(temperature) || !position) {
-        alert("Please enter valid values for all fields.");
-        return;
-      }
-
-      const payload = {
-        sn,
-        data: [{ distance, battery, temperature, position }]
-      };
-
-      const res = await fetch('/api/data', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      const text = await res.text();
-      alert(text);
-
-      const selectedSn = document.getElementById('snSelect').value;
-      if (selectedSn === sn) {
-        fetchData();
-      }
-    }
-
-    async function addDevice() {
-      const newSn = document.getElementById('newSnInput').value.trim();
-      if (!newSn) {
-        alert("Please enter a valid device SN.");
-        return;
-      }
-
-      const res = await fetch('/api/add-sn', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sn: newSn })
-      });
-
-      const text = await res.text();
-      alert(text);
-      loadSnList();
-    }
-
-    function setThreshold() {
-      const val = parseFloat(document.getElementById('thresholdInput').value);
-      if (isNaN(val) || val <= 0) {
-        alert("Please enter a valid threshold distance.");
-        return;
-      }
-      threshold = val;
-      fetchData();
-    }
-
-    function exportCSV() {
-      window.location.href = "/api/export-csv";
-    }
-
-    window.onload = () => {
-      loadSnList();
-      setInterval(fetchData, 10000);
-    };
-  </script>
-</body>
-</html>
+      const position = document.getElementById('positionInput
