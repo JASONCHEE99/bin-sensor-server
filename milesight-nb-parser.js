@@ -1,47 +1,66 @@
 // milesight-nb-parser.js
 
+function hexToIntLE(hex) {
+  // 2字节：小端转十进制
+  if (hex.length === 4) return parseInt(hex.match(/../g).reverse().join(''), 16);
+  return parseInt(hex, 16);
+}
+
 function parseNBIoTUplink(hex) {
   try {
-    // 确保为小写且无0x前缀
+    // 清理前缀与大小写
     hex = hex.replace(/^0x/, '').toLowerCase();
-    // 按手册结构定位（略去校验部分以适应常用报文，实际报文可根据产商协议修正）
-    
-    // 找到SN（假设SN为16字节等于32 hex字符，通常SN前有[sw ver(8)][hw ver(8)]共16个hex）
-    // 一般 SN 在第14~45 Byte:(28~60 hex) (02 0001 [len] [FLAG] [frame] 01 [SW][HW][SN...])
+
+    // 获取SN字段，协议: 16字节ASCII，从第28位起共32位hex
     const snHex = hex.slice(28, 60);
     let sn = '';
     for (let i = 0; i < snHex.length; i += 2) {
       const ascii = parseInt(snHex.slice(i, i+2), 16);
-      if (ascii >= 32 && ascii <= 126) sn += String.fromCharCode(ascii); // 仅可打印字符
+      if (ascii >= 32 && ascii <= 126) sn += String.fromCharCode(ascii);
     }
-    sn = sn.replace(/\0/g, '');
 
-    // 数据部分紧跟在信号强度/各信息之后，需定位Data起始
-    // 一般Data类似0175640367f80004820101050000...
-    const dataOffset = hex.indexOf('0175');
-    if (dataOffset < 0) return null;
+    // 查找通道起点，Milesight一般0175为电池通道开头
+    let dataStart = hex.search(/0175/i);
+    if (dataStart < 0) return { sn, sensor: null };
 
-    // 解析battery
-    const battery = parseInt(hex.slice(dataOffset + 4, dataOffset + 6), 16);
+    let i = dataStart;
+    const sensor = {};
 
-    // 解析temperature (0367) 2字节，后面2字节
-    const tempRaw = parseInt(hex.slice(dataOffset + 10, dataOffset + 14), 16);
-    let temperature = tempRaw > 0x7fff ? tempRaw - 0x10000 : tempRaw;
-    temperature = temperature * 0.1;
+    while (i < hex.length) {
+      const ch = hex.substr(i, 2);
+      const type = hex.substr(i + 2, 2);
 
-    // 解析distance (0482) 2字节，后面2字节
-    const distance = parseInt(hex.slice(dataOffset + 18, dataOffset + 22), 16);
-
-    // 解析position (0500) + 00/01
-    const positionRaw = hex.slice(dataOffset + 26, dataOffset + 28);
-    const position = positionRaw === '00' ? 'normal' : 'tilt';
-
-    return {
-      sn,
-      sensor: {
-        distance, battery, temperature, position
+      if (ch === '01' && type === '75') {
+        // 电池
+        let v = hexToIntLE(hex.substr(i + 4, 2));
+        sensor.battery = v + ' %';
+        i += 6;
+      } else if (ch === '03' && type === '67') {
+        // 温度
+        let t = hexToIntLE(hex.substr(i + 4, 4)) * 0.1;
+        sensor.temperature = t + " °C";
+        sensor.temperatureAlarm = hex.substr(i + 8, 2) === '01';
+        i += 10;
+      } else if (ch === '04' && type === '82') {
+        // 距离
+        let d_mm = hexToIntLE(hex.substr(i + 4, 4));
+        let d_cm = (d_mm / 10).toFixed(2); // 保留2位小数
+        sensor.distance = d_cm + " cm";
+        sensor.distance_raw_mm = d_mm + " mm";
+        sensor.distanceAlarm = hex.substr(i + 8, 2) === '01';
+        i += 10;
+      } else if (ch === '05' && type === '00') {
+        // 位置
+        const pos = hex.substr(i + 4, 2);
+        sensor.position = pos === '00' ? 'normal' : 'tilt';
+        i += 6;
+      } else {
+        // 未知，退出循环
+        break;
       }
-    };
+    }
+
+    return { sn, sensor };
   } catch (e) {
     console.error("NB-IoT hex parse failed:", e.message);
     return null;
