@@ -106,24 +106,33 @@
 
 <script>
 let threshold = null;
+let lastFetchTimer = null;
+let isFetching = false;
+let latestRows = [];
 
 // 格式化时间为新加坡时区
 function formatSgt(dt) {
   return new Date(dt).toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Singapore' });
 }
 
-// 展示提示栏（警告/一般信息）
-function showAlert(msg, isDanger=false) {
+// 全局alert，动画与可重复弹出
+function showAlert(msg, isDanger = false) {
   const div = document.getElementById('alertMsg');
   div.textContent = msg;
   div.style.display = msg ? 'block' : 'none';
-  div.style.color = isDanger ? 'white' : '#444';
-  div.style.backgroundColor = isDanger ? '#e94c3c' : '#e6e6e6';
-  // 有内容3秒后消失，否则就隐藏
-  if (msg) setTimeout(() => { div.style.display = 'none'; }, 3000);
+  div.style.backgroundColor = isDanger ? '#e94c3c' : '#4e73df';
+  div.style.color = '#fff';
+  if (div.alertTimer) clearTimeout(div.alertTimer);
+  if (msg) {
+    div.style.opacity = '1';
+    div.alertTimer = setTimeout(() => {
+      div.style.opacity = '0';
+      setTimeout(() => { div.style.display = 'none'; }, 500);
+    }, 3000);
+  }
 }
 
-// 设备列表
+// 设备列表加载，并默认选最新一个
 async function loadSnList() {
   try {
     const res = await fetch('/api/all-sns');
@@ -134,59 +143,77 @@ async function loadSnList() {
       const op = document.createElement('option'); op.value = sn; op.textContent = sn;
       select.appendChild(op);
     });
-  } catch(e) {
+    // 默认选第一个实际SN
+    if (sns.length) {
+      select.value = sns[0];
+      fetchData();
+    } else {
+      document.getElementById('dataList').innerHTML = '<p>无设备</p>';
+    }
+  } catch (e) {
     showAlert("加载设备列表失败", true);
   }
 }
 
-// 拉取数据并渲染表格和警告
+// 防抖fetchData
+function debounceFetchData(delay = 350) {
+  if (lastFetchTimer) clearTimeout(lastFetchTimer);
+  lastFetchTimer = setTimeout(fetchData, delay);
+}
+
+// 拉取数据并渲染表格，并警告
 async function fetchData() {
   const sn = document.getElementById('snSelect').value;
+  const dataList = document.getElementById('dataList');
   if (!sn) {
-    document.getElementById('dataList').innerHTML = '<p>请选择设备</p>';
-    showAlert("", false);
-    return;
+    latestRows = [];
+    dataList.innerHTML = '<p>请选择设备</p>'; showAlert("", false); return;
   }
+  if(isFetching) return; isFetching = true;
   try {
+    dataList.innerHTML = '<em>加载中...</em>';
     const res = await fetch(`/api/latest?sn=${encodeURIComponent(sn)}`);
     const data = await res.json();
-    if (!data.length) {
-      document.getElementById('dataList').innerHTML = '<p>无数据</p>';
-      showAlert("", false);
-      return;
-    }
-    let html = `<table><thead><tr>
-      <th>SN</th><th>距离(cm)</th><th>电量(%)</th><th>温度(°C)</th><th>位置</th><th>时间</th>
-      </tr></thead><tbody>`;
-    let dangerExist = false;
-    data.forEach(r => {
-      const danger = threshold !== null && r.distance < threshold;
-      if (danger) dangerExist = true;
-      html += `<tr${danger?' class="danger-row"':''}>
-        <td>${r.sn}</td>
-        <td>${r.distance}</td>
-        <td>${r.battery}</td>
-        <td>${r.temperature}</td>
-        <td>${r.position}</td>
-        <td>${formatSgt(r.timestamp)}</td>
-      </tr>`;
-    });
-    html += '</tbody></table>';
-    document.getElementById('dataList').innerHTML = html;
-
-    // 显示或清除警告提示
-    if (threshold !== null && dangerExist) {
-      showAlert("⚠️ 有距离小于你设置的阈值 " + threshold + "cm，请警惕！", true);
-    } else {
-      showAlert("", false); // 清空提示
-    }
-  } catch(e) {
+    latestRows = data;
+    renderTable();
+  } catch (e) {
     showAlert("获取数据失败", true);
+  } finally { isFetching = false; }
+}
+
+// 渲染/刷新表格，只显示最新10条
+function renderTable() {
+  if (!latestRows || !latestRows.length) {
+    document.getElementById('dataList').innerHTML = '<p>无数据</p>'; showAlert("", false); return;
   }
+  let html = `<table><thead><tr>
+    <th>SN</th><th>距离(cm)</th><th>电量(%)</th><th>温度(°C)</th><th>位置</th><th>时间</th>
+    </tr></thead><tbody>`;
+  let dangerExist = false;
+  latestRows.slice(0, 10).forEach(r => {
+    const danger = threshold !== null && r.distance < threshold;
+    if (danger) dangerExist = true;
+    html += `<tr${danger ? ' class="danger-row"' : ''}>
+      <td>${r.sn}</td>
+      <td>${r.distance}</td>
+      <td>${r.battery}</td>
+      <td>${r.temperature}</td>
+      <td>${r.position}</td>
+      <td>${formatSgt(r.timestamp)}</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  document.getElementById('dataList').innerHTML = html;
+
+  if (threshold !== null && dangerExist) {
+    showAlert("⚠️ 有距离小于你设置的阈值 " + threshold + "cm，请警惕！", true);
+    document.getElementById('dataList').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } else { showAlert("", false); }
 }
 
 // 手动上传数据
 async function sendData() {
+  const btn = event.target; btn.disabled = true; btn.textContent = '上传中...';
   const sn = document.getElementById('snInput').value.trim();
   const distance = parseFloat(document.getElementById('distanceInput').value);
   const battery = parseInt(document.getElementById('batteryInput').value);
@@ -194,29 +221,26 @@ async function sendData() {
   const position = document.getElementById('positionInput').value.trim();
 
   if (!sn || isNaN(distance) || isNaN(battery) || isNaN(temperature) || !position) {
-    showAlert("请填全所有字段");
-    return;
+    showAlert("请填全所有字段"); btn.disabled = false; btn.textContent = '手动上传'; return;
   }
   try {
-    const payload = {
-      sn,
-      data: [{ distance, battery, temperature, position }]
-    };
-
+    const payload = { sn, data: [{ distance, battery, temperature, position }] };
     const res = await fetch('/api/data', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
     });
-
     const text = await res.text();
     showAlert(text);
-
+    // 成功后清空
+    document.getElementById('distanceInput').value = '';
+    document.getElementById('batteryInput').value = '';
+    document.getElementById('tempInput').value = '';
+    document.getElementById('positionInput').value = '';
+    // 如果刚好本sn在选中，刷新
     const selectedSn = document.getElementById('snSelect').value;
-    if (selectedSn === sn) fetchData();
-  } catch(e) {
+    if (selectedSn === sn) debounceFetchData(400);
+  } catch (e) {
     showAlert("上传失败", true);
-  }
+  } finally { btn.disabled = false; btn.textContent = '手动上传'; }
 }
 
 // 新增设备
@@ -243,12 +267,9 @@ async function addDevice() {
 // 阈值设置
 function setThreshold() {
   const val = parseFloat(document.getElementById('thresholdInput').value);
-  if(isNaN(val) || val<=0) {
-    showAlert('请输入正确的距离阈值');
-    return;
-  }
+  if (isNaN(val) || val <= 0) { showAlert('请输入正确的距离阈值'); return; }
   threshold = val;
-  fetchData();
+  renderTable();
 }
 
 // 导出CSV
@@ -256,30 +277,41 @@ function exportCSV() {
   window.location.href = "/api/export-csv";
 }
 
-// ★(可选) 实时推送警告（需后端WebSocket支持）★
-/*
+// WebSocket实时推送
 function setupWebSocket() {
-  const ws = new WebSocket('ws://localhost:3001');
-  ws.onmessage = function(event) {
-    const data = JSON.parse(event.data);
+  const ws = new WebSocket(`ws://${location.host}`);
+  ws.onopen = () => { showAlert('实时推送已连接'); };
+  ws.onmessage = (event) => {
+    let data;
+    try { data = JSON.parse(event.data); } catch { return; }
+    if (!data.sn) return;
     const selectedSn = document.getElementById('snSelect').value;
-    if (selectedSn === data.sn) fetchData();
-    // 实时推送警告
-    if (threshold !== null && data.distance < threshold) {
-      showAlert("⚠️ 有距离小于你设置的阈值 " + threshold + "cm，请警惕！", true);
+    // 只推当前选中sn的数据，否则忽略
+    if (selectedSn && data.sn === selectedSn) {
+      latestRows.unshift(data);
+      // 去重
+      const seen = new Set();
+      latestRows = latestRows.filter(row => {
+        let k = row.sn + '|' + row.timestamp;
+        if (seen.has(k)) return false;
+        seen.add(k); return true;
+      }).slice(0, 10);
+      renderTable();
     }
   };
-  ws.onclose = () => setTimeout(setupWebSocket, 2000);
+  ws.onclose = () => {
+    showAlert('实时推送断开，重连中...');
+    setTimeout(setupWebSocket, 2000);
+  };
   ws.onerror = () => ws.close();
 }
-*/
 
 // 页面初始化
 window.onload = function() {
   loadSnList();
   // 如需实时WebSocket功能，取消下一行注释
-  // setupWebSocket();
+  setupWebSocket();
   // 如需自动定时刷新, 可取消下行注释
-  // setInterval(fetchData, 15000); // 每15秒自动刷新
+  setInterval(fetchData, 10000); // 每10秒自动刷新
 }
 </script>
