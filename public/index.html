@@ -86,7 +86,7 @@
     <input id="batteryInput" type="number" min="0" max="100" placeholder="电量(%)" style="width:80px"/>
     <input id="tempInput" type="number" min="-40" max="85" placeholder="温度(°C)" style="width:90px"/>
     <input id="positionInput" placeholder="位置" style="width:70px"/>
-    <button onclick="sendData()">手动上传</button>
+    <button id="sendDataBtn" onclick="sendData(event)">手动上传</button>
   </div>
 
   <div class="section">
@@ -211,9 +211,10 @@ function renderTable() {
   } else { showAlert("", false); }
 }
 
-// 手动上传数据
-async function sendData() {
-  const btn = event.target; btn.disabled = true; btn.textContent = '上传中...';
+// ??????
+async function sendData(evt) {
+  const btn = evt?.target || document.getElementById('sendDataBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '???...'; }
   const sn = document.getElementById('snInput').value.trim();
   const distance = parseFloat(document.getElementById('distanceInput').value);
   const battery = parseInt(document.getElementById('batteryInput').value);
@@ -221,7 +222,7 @@ async function sendData() {
   const position = document.getElementById('positionInput').value.trim();
 
   if (!sn || isNaN(distance) || isNaN(battery) || isNaN(temperature) || !position) {
-    showAlert("请填全所有字段"); btn.disabled = false; btn.textContent = '手动上传'; return;
+    showAlert("???????"); if (btn) { btn.disabled = false; btn.textContent = '????'; } return;
   }
   try {
     const payload = { sn, data: [{ distance, battery, temperature, position }] };
@@ -230,18 +231,19 @@ async function sendData() {
     });
     const text = await res.text();
     showAlert(text);
-    // 成功后清空
+    // ?????
     document.getElementById('distanceInput').value = '';
     document.getElementById('batteryInput').value = '';
     document.getElementById('tempInput').value = '';
     document.getElementById('positionInput').value = '';
-    // 如果刚好本sn在选中，刷新
+    // ?????sn??????
     const selectedSn = document.getElementById('snSelect').value;
     if (selectedSn === sn) debounceFetchData(400);
   } catch (e) {
-    showAlert("上传失败", true);
-  } finally { btn.disabled = false; btn.textContent = '手动上传'; }
+    showAlert("????", true);
+  } finally { if (btn) { btn.disabled = false; btn.textContent = '????'; } }
 }
+
 
 // 新增设备
 async function addDevice() {
@@ -279,7 +281,8 @@ function exportCSV() {
 
 // WebSocket实时推送
 function setupWebSocket() {
-  const ws = new WebSocket(`ws://${location.host}`);
+  const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(`${protocol}://${location.host}`);
   ws.onopen = () => { showAlert('实时推送已连接'); };
   ws.onmessage = (event) => {
     let data;
