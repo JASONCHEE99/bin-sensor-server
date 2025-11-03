@@ -2,319 +2,438 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <title>Bin Sensor Monitor</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bin Sensor 控制台</title>
   <style>
     :root {
-      --main-color: #4e73df;
-      --danger-color: #e94c3c;
-      --gray: #f8f9fc;
-      --radius: 8px;
+      --primary: #2563eb;
+      --danger: #dc2626;
+      --bg: #f4f6fb;
+      --card: #ffffff;
+      --radius: 10px;
+      --shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
+      --muted: #475569;
+      --border: #e2e8f0;
+      --success: #16a34a;
+      color-scheme: light;
     }
+
+    * {
+      box-sizing: border-box;
+    }
+
     body {
-      font-family: 'Segoe UI', Arial, sans-serif;
-      padding: 30px;
-      max-width: 900px;
-      margin: auto;
-      background: var(--gray);
-      color: #222;
+      margin: 0;
+      padding: 0;
+      font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: #0f172a;
+      line-height: 1.6;
     }
-    .section { background: #fff; padding: 18px 20px; border-radius: var(--radius); box-shadow: 0 1px 4px #ddd; margin-bottom: 24px;}
-    h2 { color: var(--main-color); font-size: 1.5em; margin-top: 0; }
-    label { font-weight: bold; margin-right: 12px; }
-    input, select, button {
-      padding: 7px 11px;
-      border: 1px solid #cccccc;
+
+    header {
+      padding: 28px 20px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 26px;
+      letter-spacing: 2px;
+    }
+
+    header p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    main {
+      padding: 24px 20px 60px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    .grid {
+      display: grid;
+      gap: 20px;
+    }
+
+    @media (min-width: 960px) {
+      .grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    .card {
+      background: var(--card);
       border-radius: var(--radius);
-      margin-right: 8px;
+      padding: 22px;
+      box-shadow: var(--shadow);
+      border: 1px solid rgba(148, 163, 184, 0.12);
+    }
+
+    .card h2 {
+      margin: 0 0 16px;
+      font-size: 20px;
+    }
+
+    label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: #1e293b;
+    }
+
+    input, select, button {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #fff;
+      font-size: 15px;
+    }
+
+    input:focus, select:focus {
       outline: none;
-      font-size: 1em;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
     }
+
     button {
-      background: var(--main-color);
+      background: var(--primary);
       color: #fff;
-      border: none;
+      font-weight: 600;
       cursor: pointer;
-      transition: background .15s;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+      border: none;
     }
-    button:hover { background: #3452bf; }
-    .btn-danger { background: var(--danger-color);}
+
+    button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 20px rgba(37, 99, 235, 0.25);
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      box-shadow: none;
+      transform: none;
+    }
+
+    .actions {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    @media (min-width: 600px) {
+      .actions {
+        flex-direction: row;
+      }
+
+      .actions > * {
+        flex: 1;
+      }
+    }
+
     table {
       width: 100%;
       border-collapse: collapse;
-      margin-top: 10px;
-      font-size: 1em;
-      border-radius: var(--radius);
-      overflow: hidden;
-      background: #fff;
+      margin-top: 20px;
+      font-size: 14px;
     }
+
     th, td {
-      padding: 8px 10px;
-      border-bottom: 1px solid #eee;
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+      text-align: left;
+      white-space: nowrap;
     }
-    th { background: #f1f5fa; }
-    tr.danger-row { background: #ffe4e1;}
-    @media (max-width:700px) {
-      table, thead, tbody, th, td, tr { display: block; }
-      th, td { padding: 9px 6px;}
-      tr { margin-bottom:12px;}
-    }
-    #alertMsg {
-      display:none;
-      margin: 15px 0;
-      padding: 10px;
-      border-radius: var(--radius);
+
+    th {
+      text-transform: uppercase;
       font-weight: 600;
-      text-align: center;
-      transition: all .2s;
+      font-size: 12px;
+      color: #475569;
+      letter-spacing: 1px;
+      background: rgba(37, 99, 235, 0.06);
     }
-    .actions { margin-bottom: 16px;}
+
+    tr.highlight {
+      background: rgba(220, 38, 38, 0.08);
+      color: #b91c1c;
+    }
+
+    .banner {
+      margin-bottom: 18px;
+      padding: 12px 14px;
+      border-radius: 8px;
+      display: none;
+      font-weight: 600;
+    }
+
+    .banner.show {
+      display: block;
+    }
+
+    .banner.success {
+      background: rgba(22, 163, 74, 0.1);
+      color: var(--success);
+    }
+
+    .banner.error {
+      background: rgba(220, 38, 38, 0.1);
+      color: var(--danger);
+    }
   </style>
 </head>
 <body>
-  <div class="section">
-    <h2>设备管理</h2>
-    <label for="newSnInput">新增SN:</label>
-    <input id="newSnInput" placeholder="输入新设备SN" style="width:140px"/>
-    <button onclick="addDevice()">添加设备</button>
-  </div>
+  <header>
+    <h1>BIN SENSOR SERVER</h1>
+    <p>EM400-MUD → MQTT → Web 数据链路监控，支持幂等入库与安全策略。</p>
+  </header>
 
-  <div class="section">
-    <h2>上传数据</h2>
-    <input id="snInput" placeholder="SN" style="width:110px"/>
-    <input id="distanceInput" type="number" min="0" placeholder="距离(cm)" style="width:90px"/>
-    <input id="batteryInput" type="number" min="0" max="100" placeholder="电量(%)" style="width:80px"/>
-    <input id="tempInput" type="number" min="-40" max="85" placeholder="温度(°C)" style="width:90px"/>
-    <input id="positionInput" placeholder="位置" style="width:70px"/>
-    <button id="sendDataBtn" onclick="sendData(event)">手动上传</button>
-  </div>
+  <main>
+    <div id="banner" class="banner"></div>
 
-  <div class="section">
-    <div class="actions">
-      <label for="snSelect">选择设备</label>
-      <select id="snSelect" onchange="fetchData()">
-        <option value="">请选择SN</option>
-      </select>
-      <input id="thresholdInput" type="number" min="0" placeholder="距离阈值(cm)" style="width:120px"/>
-      <button onclick="setThreshold()">设置阈值</button>
-      <button onclick="fetchData()">刷新</button>
-      <button onclick="exportCSV()">导出CSV</button>
+    <div class="grid">
+      <section class="card">
+        <h2>注册设备 SN</h2>
+        <label for="new-sn">设备序列号 (sn)</label>
+        <input id="new-sn" placeholder="例如：mud-30123456">
+        <button id="register-btn">注册设备</button>
+      </section>
+
+      <section class="card">
+        <h2>手动采集上报</h2>
+        <div>
+          <label for="manual-sn">设备 SN</label>
+          <input id="manual-sn" placeholder="请输入已注册 SN">
+        </div>
+        <div>
+          <label for="manual-distance">距离 (cm)</label>
+          <input id="manual-distance" type="number" min="0" step="0.1">
+        </div>
+        <div>
+          <label for="manual-battery">电量 (%)</label>
+          <input id="manual-battery" type="number" min="0" max="100" step="1">
+        </div>
+        <div>
+          <label for="manual-temperature">温度 (℃)</label>
+          <input id="manual-temperature" type="number" min="-40" max="85" step="0.1">
+        </div>
+        <div>
+          <label for="manual-position">姿态</label>
+          <input id="manual-position" placeholder="normal / tilt">
+        </div>
+        <div class="actions">
+          <button id="manual-submit">立即上报</button>
+          <button id="export-btn">导出最近 10,000 条 CSV</button>
+        </div>
+      </section>
     </div>
-    <div id="alertMsg"></div>
-    <div id="dataList"></div>
-  </div>
 
-<script>
-let threshold = null;
-let lastFetchTimer = null;
-let isFetching = false;
-let latestRows = [];
+    <section class="card" style="margin-top: 20px;">
+      <h2>实时数据</h2>
+      <div class="actions">
+        <select id="sn-filter">
+          <option value="">全部设备</option>
+        </select>
+        <button id="refresh-btn">刷新列表</button>
+      </div>
+      <table id="data-table">
+        <thead>
+          <tr>
+            <th>SN</th>
+            <th>距离(cm)</th>
+            <th>距离(mm)</th>
+            <th>温度(℃)</th>
+            <th>电量(%)</th>
+            <th>姿态</th>
+            <th>温度告警</th>
+            <th>距离告警</th>
+            <th>时间戳</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </main>
 
-// 格式化时间为新加坡时区
-function formatSgt(dt) {
-  return new Date(dt).toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Singapore' });
-}
+  <script>
+    const banner = document.getElementById('banner');
+    const registerBtn = document.getElementById('register-btn');
+    const manualSubmitBtn = document.getElementById('manual-submit');
+    const refreshBtn = document.getElementById('refresh-btn');
+    const exportBtn = document.getElementById('export-btn');
+    const snFilter = document.getElementById('sn-filter');
+    const tableBody = document.querySelector('#data-table tbody');
+    const records = [];
 
-// 全局alert，动画与可重复弹出
-function showAlert(msg, isDanger = false) {
-  const div = document.getElementById('alertMsg');
-  div.textContent = msg;
-  div.style.display = msg ? 'block' : 'none';
-  div.style.backgroundColor = isDanger ? '#e94c3c' : '#4e73df';
-  div.style.color = '#fff';
-  if (div.alertTimer) clearTimeout(div.alertTimer);
-  if (msg) {
-    div.style.opacity = '1';
-    div.alertTimer = setTimeout(() => {
-      div.style.opacity = '0';
-      setTimeout(() => { div.style.display = 'none'; }, 500);
-    }, 3000);
-  }
-}
-
-// 设备列表加载，并默认选最新一个
-async function loadSnList() {
-  try {
-    const res = await fetch('/api/all-sns');
-    const sns = await res.json();
-    const select = document.getElementById('snSelect');
-    select.innerHTML = `<option value="">请选择SN</option>`;
-    sns.forEach(sn => {
-      const op = document.createElement('option'); op.value = sn; op.textContent = sn;
-      select.appendChild(op);
-    });
-    // 默认选第一个实际SN
-    if (sns.length) {
-      select.value = sns[0];
-      fetchData();
-    } else {
-      document.getElementById('dataList').innerHTML = '<p>无设备</p>';
+    function showBanner(message, type = 'success') {
+      banner.textContent = message;
+      banner.className = `banner show ${type}`;
+      setTimeout(() => {
+        banner.className = 'banner';
+      }, 4000);
     }
-  } catch (e) {
-    showAlert("加载设备列表失败", true);
-  }
-}
 
-// 防抖fetchData
-function debounceFetchData(delay = 350) {
-  if (lastFetchTimer) clearTimeout(lastFetchTimer);
-  lastFetchTimer = setTimeout(fetchData, delay);
-}
+    async function registerDevice() {
+      const sn = document.getElementById('new-sn').value.trim();
+      if (!sn) {
+        showBanner('请填写 SN', 'error');
+        return;
+      }
+      registerBtn.disabled = true;
+      try {
+        const res = await fetch('/api/add-sn', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sn }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          showBanner(`设备 ${sn} 注册成功`);
+          document.getElementById('manual-sn').value = sn;
+          await loadDeviceOptions();
+        } else {
+          showBanner(data.message || '注册失败', 'error');
+        }
+      } catch (err) {
+        showBanner(err.message, 'error');
+      } finally {
+        registerBtn.disabled = false;
+      }
+    }
 
-// 拉取数据并渲染表格，并警告
-async function fetchData() {
-  const sn = document.getElementById('snSelect').value;
-  const dataList = document.getElementById('dataList');
-  if (!sn) {
-    latestRows = [];
-    dataList.innerHTML = '<p>请选择设备</p>'; showAlert("", false); return;
-  }
-  if(isFetching) return; isFetching = true;
-  try {
-    dataList.innerHTML = '<em>加载中...</em>';
-    const res = await fetch(`/api/latest?sn=${encodeURIComponent(sn)}`);
-    const data = await res.json();
-    latestRows = data;
-    renderTable();
-  } catch (e) {
-    showAlert("获取数据失败", true);
-  } finally { isFetching = false; }
-}
+    async function submitManual() {
+      const payload = {
+        sn: document.getElementById('manual-sn').value.trim(),
+        sensor: {
+          distance_cm: parseFloat(document.getElementById('manual-distance').value),
+          battery: parseInt(document.getElementById('manual-battery').value, 10),
+          temperature_c: parseFloat(document.getElementById('manual-temperature').value),
+          position: document.getElementById('manual-position').value.trim() || undefined,
+        },
+      };
+      if (!payload.sn) {
+        showBanner('请填写已注册的 SN', 'error');
+        return;
+      }
+      manualSubmitBtn.disabled = true;
+      try {
+        const res = await fetch('/api/data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showBanner(data.message || '上报失败', 'error');
+          return;
+        }
+        showBanner('上报成功');
+        await refreshTable();
+      } catch (err) {
+        showBanner(err.message, 'error');
+      } finally {
+        manualSubmitBtn.disabled = false;
+      }
+    }
 
-// 渲染/刷新表格，只显示最新10条
-function renderTable() {
-  if (!latestRows || !latestRows.length) {
-    document.getElementById('dataList').innerHTML = '<p>无数据</p>'; showAlert("", false); return;
-  }
-  let html = `<table><thead><tr>
-    <th>SN</th><th>距离(cm)</th><th>电量(%)</th><th>温度(°C)</th><th>位置</th><th>时间</th>
-    </tr></thead><tbody>`;
-  let dangerExist = false;
-  latestRows.slice(0, 10).forEach(r => {
-    const danger = threshold !== null && r.distance < threshold;
-    if (danger) dangerExist = true;
-    html += `<tr${danger ? ' class="danger-row"' : ''}>
-      <td>${r.sn}</td>
-      <td>${r.distance}</td>
-      <td>${r.battery}</td>
-      <td>${r.temperature}</td>
-      <td>${r.position}</td>
-      <td>${formatSgt(r.timestamp)}</td>
-    </tr>`;
-  });
-  html += '</tbody></table>';
-  document.getElementById('dataList').innerHTML = html;
+    async function loadDeviceOptions() {
+      const res = await fetch('/api/all-sns?limit=200');
+      const data = await res.json();
+      if (!res.ok) return;
+      const options = ['<option value="">全部设备</option>'];
+      (data.data?.devices || []).forEach(({ sn }) => {
+        options.push(`<option value="${sn}">${sn}</option>`);
+      });
+      snFilter.innerHTML = options.join('');
+    }
 
-  if (threshold !== null && dangerExist) {
-    showAlert("⚠️ 有距离小于你设置的阈值 " + threshold + "cm，请警惕！", true);
-    document.getElementById('dataList').scrollIntoView({ behavior: 'smooth', block: 'center' });
-  } else { showAlert("", false); }
-}
+    function renderTable() {
+      const rows = records.slice(0, 50).map((row) => {
+        const highlight = row.temperature_alarm === 1 || row.distance_alarm === 1;
+        return `
+          <tr class="${highlight ? 'highlight' : ''}">
+            <td>${row.sn}</td>
+            <td>${row.distance_cm ?? ''}</td>
+            <td>${row.distance_mm ?? ''}</td>
+            <td>${row.temperature_c ?? ''}</td>
+            <td>${row.battery ?? ''}</td>
+            <td>${row.position ?? ''}</td>
+            <td>${row.temperature_alarm ?? 0}</td>
+            <td>${row.distance_alarm ?? 0}</td>
+            <td>${new Date(row.ts).toLocaleString()}</td>
+          </tr>
+        `;
+      });
+      tableBody.innerHTML = rows.join('');
+    }
 
-// ??????
-async function sendData(evt) {
-  const btn = evt?.target || document.getElementById('sendDataBtn');
-  if (btn) { btn.disabled = true; btn.textContent = '???...'; }
-  const sn = document.getElementById('snInput').value.trim();
-  const distance = parseFloat(document.getElementById('distanceInput').value);
-  const battery = parseInt(document.getElementById('batteryInput').value);
-  const temperature = parseFloat(document.getElementById('tempInput').value);
-  const position = document.getElementById('positionInput').value.trim();
-
-  if (!sn || isNaN(distance) || isNaN(battery) || isNaN(temperature) || !position) {
-    showAlert("???????"); if (btn) { btn.disabled = false; btn.textContent = '????'; } return;
-  }
-  try {
-    const payload = { sn, data: [{ distance, battery, temperature, position }] };
-    const res = await fetch('/api/data', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-    });
-    const text = await res.text();
-    showAlert(text);
-    // ?????
-    document.getElementById('distanceInput').value = '';
-    document.getElementById('batteryInput').value = '';
-    document.getElementById('tempInput').value = '';
-    document.getElementById('positionInput').value = '';
-    // ?????sn??????
-    const selectedSn = document.getElementById('snSelect').value;
-    if (selectedSn === sn) debounceFetchData(400);
-  } catch (e) {
-    showAlert("????", true);
-  } finally { if (btn) { btn.disabled = false; btn.textContent = '????'; } }
-}
-
-
-// 新增设备
-async function addDevice() {
-  const newSn = document.getElementById('newSnInput').value.trim();
-  if (!newSn) {
-    showAlert("请输入SN");
-    return;
-  }
-  try {
-    const res = await fetch('/api/add-sn', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sn: newSn })
-    });
-    const text = await res.text();
-    showAlert(text);
-    loadSnList();
-  } catch(e) {
-    showAlert("添加设备失败", true);
-  }
-}
-
-// 阈值设置
-function setThreshold() {
-  const val = parseFloat(document.getElementById('thresholdInput').value);
-  if (isNaN(val) || val <= 0) { showAlert('请输入正确的距离阈值'); return; }
-  threshold = val;
-  renderTable();
-}
-
-// 导出CSV
-function exportCSV() {
-  window.location.href = "/api/export-csv";
-}
-
-// WebSocket实时推送
-function setupWebSocket() {
-  const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-  const ws = new WebSocket(`${protocol}://${location.host}`);
-  ws.onopen = () => { showAlert('实时推送已连接'); };
-  ws.onmessage = (event) => {
-    let data;
-    try { data = JSON.parse(event.data); } catch { return; }
-    if (!data.sn) return;
-    const selectedSn = document.getElementById('snSelect').value;
-    // 只推当前选中sn的数据，否则忽略
-    if (selectedSn && data.sn === selectedSn) {
-      latestRows.unshift(data);
-      // 去重
-      const seen = new Set();
-      latestRows = latestRows.filter(row => {
-        let k = row.sn + '|' + row.timestamp;
-        if (seen.has(k)) return false;
-        seen.add(k); return true;
-      }).slice(0, 10);
+    async function refreshTable() {
+      const params = new URLSearchParams({ limit: 50 });
+      if (snFilter.value) params.append('sn', snFilter.value);
+      const res = await fetch(`/api/latest?${params.toString()}`);
+      const data = await res.json();
+      if (!res.ok) {
+        showBanner(data.message || '查询失败', 'error');
+        return;
+      }
+      records.length = 0;
+      (data.data?.data || []).forEach((row) => records.push(row));
       renderTable();
     }
-  };
-  ws.onclose = () => {
-    showAlert('实时推送断开，重连中...');
-    setTimeout(setupWebSocket, 2000);
-  };
-  ws.onerror = () => ws.close();
-}
 
-// 页面初始化
-window.onload = function() {
-  loadSnList();
-  // 如需实时WebSocket功能，取消下一行注释
-  setupWebSocket();
-  // 如需自动定时刷新, 可取消下行注释
-  setInterval(fetchData, 10000); // 每10秒自动刷新
-}
-</script>
+    function setupWebSocket() {
+      const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+      const ws = new WebSocket(`${protocol}://${window.location.host}`);
+      ws.onopen = () => showBanner('实时通道已建立');
+      ws.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (!payload.sn) return;
+          if (snFilter.value && payload.sn !== snFilter.value) return;
+          records.unshift(payload);
+          const seen = new Set();
+          const filtered = [];
+          for (const row of records) {
+            const key = `${row.sn}|${row.ts}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            filtered.push(row);
+            if (filtered.length >= 50) break;
+          }
+          records.length = 0;
+          records.push(...filtered);
+          renderTable();
+        } catch (_) {
+          /* ignore */
+        }
+      };
+      ws.onclose = () => {
+        showBanner('WebSocket 已断开，尝试重连...', 'error');
+        setTimeout(setupWebSocket, 3000);
+      };
+      ws.onerror = () => ws.close();
+    }
+
+    registerBtn.addEventListener('click', registerDevice);
+    manualSubmitBtn.addEventListener('click', submitManual);
+    refreshBtn.addEventListener('click', refreshTable);
+    snFilter.addEventListener('change', refreshTable);
+    exportBtn.addEventListener('click', () => {
+      window.location.href = '/api/export-csv';
+    });
+
+    (async function bootstrap() {
+      await loadDeviceOptions();
+      await refreshTable();
+      setupWebSocket();
+    })();
+  </script>
+</body>
+</html>

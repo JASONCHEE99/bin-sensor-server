@@ -1,157 +1,140 @@
-# 🗑️ Bin Sensor Monitoring System  
-**垃圾桶传感器监测系统**
+# Bin Sensor Server
 
-A web-based system to receive bin sensor data via MQTT, store in SQLite, and visualize via browser.  
-一个基于网页的系统，通过 MQTT 接收垃圾桶传感器数据，存储在 SQLite 数据库，并在浏览器中可视化展示。
+Unified EM400-MUD uplink bridge. Messages from MQTT are verified, normalised, and persisted into SQLite with HTTP APIs and dashboard visualisation.
 
----
+## Contents
+- [Quick Start](#quick-start)
+- [Environment Variables](#environment-variables)
+- [Data Flow](#data-flow)
+- [Database Schema](#database-schema)
+- [Operations](#operations)
+- [Testing & Replays](#testing--replays)
+- [Security Incident: Secret Rotation](#security-incident-secret-rotation)
 
-## 📦 Features 功能
-
-- ✅ Receive data via MQTT 接收 MQTT 数据
-- ✅ Store distance, battery, temperature, position 存储距离、电量、温度、姿态
-- ✅ SQLite database integration 集成 SQLite 数据库存储
-- ✅ Frontend dashboard for display and export 前端页面显示与导出
-- ✅ Threshold alert on distance 距离阈值提醒
-- ✅ Support multiple devices with SN filter 支持多个设备 SN 下拉筛选
-
----
-
-## 📡 Data Format 数据格式（MQTT Payload）
-
-传感器需发送以下 JSON 格式数据到 MQTT：
-
-```json
-{
-  "sn": "6749D19054690031",
-  "data": [
-    {
-      "distance": 315,
-      "battery": 100,
-      "temperature": 26.7,
-      "position": "tilt"
-    }
-  ]
-}
-````
-
-| Key           | Description (English)   | 描述（中文）            |
-| ------------- | ----------------------- | ----------------- |
-| `sn`          | Device Serial Number    | 设备序列号             |
-| `distance`    | Distance in cm          | 距离（单位 cm）         |
-| `battery`     | Battery percentage      | 电量百分比             |
-| `temperature` | Temperature in Celsius  | 温度（摄氏度）           |
-| `position`    | Orientation (e.g. tilt) | 姿态（如 tilt、normal） |
-
----
-
-## 🛠️ Installation & Usage 安装与使用
-
-### 1. Clone 项目克隆
-
-```bash
-git clone https://github.com/your-repo/bin-sensor-server.git
-cd bin-sensor-server
-```
-
-### 2. Install Dependencies 安装依赖
-
+## Quick Start
 ```bash
 npm install
+npm run migrate
+npm run seed        # optional demo data
+npm run dev         # nodemon
+# or
+npm start
+```
+Dashboard: [http://localhost:3000](http://localhost:3000)
+
+## Environment Variables
+Create `.env` from `.env.example`. Values are read via `config.js`.
+
+| Name | Purpose |
+|------|---------|
+| `NODE_ENV` | `development` / `production` / `test`. Enables safe defaults. |
+| `PORT` | HTTP listen port (default `3000`). |
+| `DATABASE_PATH` | SQLite file path. |
+| `MQTT_BROKER_URL` | Broker URL e.g. `mqtts://broker:8883`. |
+| `MQTT_USERNAME`, `MQTT_PASSWORD` | Optional MQTT credentials. |
+| `MQTT_CLIENT_ID` | Custom client ID (random default). |
+| `MQTT_STATUS_SN` | SN used when publishing server status messages (default `server`). |
+| `MQTT_TLS_CA`, `MQTT_TLS_CERT`, `MQTT_TLS_KEY` | TLS material paths (optional). |
+| `MQTT_TLS_REJECT_UNAUTHORIZED` | Enforce broker certificate validation (`true` by default). |
+| `CORS_WHITELIST` | Comma separated origins for the dashboard. Empty ⇒ allow all. |
+| `RATE_LIMIT_WINDOW_MS`, `RATE_LIMIT_MAX` | HTTP rate limiting window & max requests. |
+| `PARSE_ERROR_RETENTION_DAYS` | Future cleanup policy for `parse_errors`. |
+| `LOG_LEVEL` | Application log level (planned). |
+
+## Data Flow
+```
+               ┌─────────────────────────────┐
+               │  Milesight EM400-MUD Sensor │
+               └──────────────┬──────────────┘
+                              │ TLV payload
+                              ▼
+                     sensors/bin/{sn}/uplink
+                              │
+                ┌─────────────┴─────────────┐
+                │       MQTT Broker         │
+                └─────────────┬─────────────┘
+                              │ QoS1, clean session,
+                              │ TLS/credentials from .env
+                              ▼
+                   Bin Sensor Server (this repo)
+                   ├─ `mqtt-service.js` → TLV parser
+                   │    └─ store idempotent records (sn + payload hash)
+                   ├─ `app.js` HTTP API / dashboard
+                   └─ WebSocket push for live charts
+                              │
+                              ▼
+                     SQLite (`sensor_data`, `parse_errors`)
+                              │
+                              ▼
+                  `/api/*` & `/public/index.html`
 ```
 
-### 3. Start Server 启动服务
+Topic conventions (all QoS 1, retain disabled):
+- Uplink ingest: `sensors/bin/{sn}/uplink`
+- Device status: `sensors/bin/{sn}/status` (`online/offline/unknown`)
+- Downlink staging: `sensors/bin/{sn}/downlink` (reserved)
 
-```bash
-node server.js
-```
+## Database Schema
+`sensor_data`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | INTEGER PK | Autoincrement |
+| `sn` | TEXT NOT NULL | Device serial |
+| `distance_cm` | REAL | Derived from TLV |
+| `distance_mm` | INTEGER | Exact millimetres |
+| `battery` | INTEGER | Percentage |
+| `temperature_c` | REAL | Celsius |
+| `position` | TEXT | `normal` / `tilt` |
+| `temperature_alarm` | INTEGER | 0/1 |
+| `distance_alarm` | INTEGER | 0/1 |
+| `ts` | DATETIME DEFAULT CURRENT_TIMESTAMP | Server timestamp |
 
-### 4. Open in Browser 打开浏览器
+Supporting tables:
+- `devices(sn PRIMARY KEY, added_at)`
+- `parse_errors(id, sn?, raw_payload, error_message, ts)` – samples for replay.
+- `ingest_dedup(sn, payload_hash, ts)` – prevents duplicate inserts.
 
-```
-http://localhost:3000
-```
+Indexes:
+- `idx_sensor_data_sn_ts` on `(sn, ts)`
+- Primary key (sn, payload_hash) on `ingest_dedup`
 
----
+## Operations
+- **Migrations**: `npm run migrate`
+  - Converts legacy `robot_SN` fields to `sn`
+  - Backfills new measurement columns
+- **Seed data**: `npm run seed demo-device-001`
+- **Replay parse errors**: `npm run replay -- --apply`
+- **Lint**: `npm run lint`
+- **Tests**: `npm test`
 
-## 📡 MQTT Setup 配置 MQTT
+### HTTP APIs (selected)
+| Method | Path | Notes |
+|--------|------|-------|
+| POST | `/api/add-sn` | Register device `{ sn }` |
+| POST | `/api/data` | Manual insert `{ sn, sensor: { distance_cm?, battery?, ... } }` |
+| GET | `/api/latest?sn=&limit=` | Paginated readings |
+| GET | `/api/stats?sn=` | Aggregate metrics |
+| GET | `/api/parse-errors` | Inspect failed MQTT payloads |
+| GET | `/healthz` / `/readyz` | Liveness & readiness (checks DB + MQTT) |
 
-确保你已在本地启动 MQTT Broker（默认端口为 `1883`）：
+All request bodies validated via Zod; responses normalised numeric-only fields.
 
-| 项目 Item  | 值 Value              |
-| -------- | -------------------- |
-| Host 主机  | `localhost` or 本机 IP |
-| Port 端口  | `1883`               |
-| Topic 主题 | 任意（监听 `#` 所有主题）      |
+## Testing & Replays
+| Command | Description |
+|---------|-------------|
+| `npm test` | Jest unit tests covering TLV channels & alarm flags. |
+| `npm run replay -- --limit 10` | Dry-run decoding of recent parse failures. |
+| `npm run replay -- --apply` | Replay and insert successful decodes; clears entries. |
 
-系统使用 `mqtt` 模块自动连接并接收数据。
+## Security Incident: Secret Rotation
+If `.env` or credentials leak:
+1. Rotate keys/secrets at the provider (MQTT, TLS, downstream APIs).
+2. Replace environment values in deployment targets.
+3. **Repository cleanup**  
+   - `git filter-repo --path .env --invert-paths` (preferred)  
+   - or `bfg --delete-files .env`  
+   - Force-push and invalidate existing clones.
+4. Reissue certificates if TLS assets were exposed.
+5. Document incident date & credentials rotated in your operational log.
 
----
-
-## 🗃️ Database Structure 数据库结构（SQLite）
-
-| 字段 Field    | 类型 Type | 描述 Description |
-| ----------- | ------- | -------------- |
-| id          | INTEGER | 自增主键 Auto ID   |
-| robot\_SN   | TEXT    | 设备序列号 SN       |
-| distance    | REAL    | 距离（cm）         |
-| battery     | INTEGER | 电量（%）          |
-| temperature | REAL    | 温度（°C）         |
-| position    | TEXT    | 姿态（如 tilt）     |
-| timestamp   | TEXT    | 时间戳（ISO 格式）    |
-
----
-
-## 🖥️ Frontend 前端功能
-
-* 📋 Select SN to filter device 选择设备 SN 查看数据
-* 📊 View sensor data in table 表格展示数据
-* 🚨 Red alert when distance < threshold 距离低于阈值提醒
-* ⬇️ Export CSV 导出 CSV 文件
-* 🔄 Auto refresh every 30 seconds 每 30 秒自动刷新
-
----
-
-## 📁 Project Structure 项目结构
-
-```
-bin-sensor-server/
-├── public/              # Static front-end (静态网页)
-│   └── index.html
-├── server.js            # Main server with MQTT
-├── app.js               # Express HTTP API
-├── db.js                # SQLite DB config
-├── package.json
-```
-
----
-
-## 🔧 Future Plans 后续计划
-
-* 📈 图表展示设备历史趋势（Charts for historical data）
-* 📬 报警推送到邮箱/Telegram（Alert via Email/Telegram）
-* ☁️ 云端同步与远程管理（Cloud sync and remote access）
-* 🧑‍🔧 后台用户权限与管理（Admin panel and user roles）
-
----
-
-## 🧑‍💻 Author 作者
-
-**Cheez**, 2025
-
-* 本地部署 | 支持 MQTT | Node.js + SQLite 全栈实现
-* Local deployment | MQTT Sensor Ready | Full Stack Node.js + SQLite
-
----
-
-## 📎 License 许可证
-
-MIT License
-
-```
-
----
-
-如你有 GitHub 链接、截图、部署网址，可以额外加上封面图和链接。  
-需要我帮你也创建 `README.md` 文件并放进你的项目里用 Node 脚本写入，也可以告诉我！
-```
+Historical backups containing secrets must be purged; ensure CI/CD artifacts are rotated as well.
